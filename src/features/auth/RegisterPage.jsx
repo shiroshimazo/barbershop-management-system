@@ -81,12 +81,32 @@ function GoogleIcon() {
   )
 }
 
-export default function LoginPage({ onCreateAccount }) {
+function getPasswordStrength(password) {
+  let score = 0
+
+  if (password.length >= 8) score += 1
+  if (/[A-Z]/.test(password) && /[a-z]/.test(password)) score += 1
+  if (/\d/.test(password)) score += 1
+  if (/[^A-Za-z0-9]/.test(password)) score += 1
+
+  if (!password) return { label: '', level: 'empty' }
+  if (score <= 1) return { label: 'Weak', level: 'weak' }
+  if (score <= 3) return { label: 'Good', level: 'good' }
+
+  return { label: 'Strong', level: 'strong' }
+}
+
+export default function RegisterPage({ onSignIn }) {
+  const [password, setPassword] = useState('')
+  const [phone, setPhone] = useState('')
   const [isPasswordVisible, setIsPasswordVisible] = useState(false)
+  const [isConfirmPasswordVisible, setIsConfirmPasswordVisible] = useState(false)
   const [toastMessage, setToastMessage] = useState('')
   const shouldReduceMotion = useReducedMotion()
-  const headingControls = useAnimationControls()
   const formControls = useAnimationControls()
+  const headingControls = useAnimationControls()
+
+  const passwordStrength = getPasswordStrength(password)
 
   const softTransition = useMemo(
     () => ({
@@ -101,34 +121,34 @@ export default function LoginPage({ onCreateAccount }) {
     [shouldReduceMotion],
   )
 
-  const headingStart = useMemo(
+  const formStart = useMemo(
     () => (shouldReduceMotion ? { opacity: 0 } : { opacity: 0, x: -36 }),
     [shouldReduceMotion],
   )
 
-  const formStart = useMemo(
+  const headingStart = useMemo(
     () => (shouldReduceMotion ? { opacity: 0 } : { opacity: 0, x: 36 }),
     [shouldReduceMotion],
   )
 
   useEffect(() => {
-    headingControls.set(headingStart)
     formControls.set(formStart)
+    headingControls.set(headingStart)
 
-    headingControls.start({
+    formControls.start({
       ...slideAnimation,
       transition: softTransition,
     })
 
-    formControls.start({
+    headingControls.start({
       ...slideAnimation,
       transition: { ...softTransition, delay: shouldReduceMotion ? 0 : 0.32 },
     })
   }, [
-    headingControls,
-    headingStart,
     formControls,
     formStart,
+    headingControls,
+    headingStart,
     shouldReduceMotion,
     slideAnimation,
     softTransition,
@@ -138,53 +158,86 @@ export default function LoginPage({ onCreateAccount }) {
     event.preventDefault()
 
     const formData = new FormData(event.currentTarget)
-    const email = formData.get('email')?.toString().trim()
-    const password = formData.get('password')?.toString().trim()
+    const requiredFields = [
+      'fullname',
+      'email',
+      'phone',
+      'password',
+      'confirmPassword',
+    ]
+    const hasEmptyField = requiredFields.some(
+      (field) => !formData.get(field)?.toString().trim(),
+    )
 
-    if (!email || !password) {
+    if (hasEmptyField) {
       setToastMessage('Please fill in all text fields.')
     }
   }
 
   return (
-    <main className="auth-page">
+    <main className="register-page">
       <Toast message={toastMessage} onClose={() => setToastMessage('')} />
-      <section className="brand-panel" aria-label="Barbershop workspace">
-        <div className="brand-content">
-          <motion.h2 initial={headingStart} animate={headingControls}>
-            Keep every chair booked and every visit easy to manage.
-          </motion.h2>
-        </div>
-      </section>
-
-      <section className="auth-panel" aria-labelledby="login-heading">
+      <section className="auth-panel register-form-panel" aria-labelledby="register-heading">
         <motion.form
-          className="login-form"
+          className="login-form register-form"
           initial={formStart}
           animate={formControls}
           onSubmit={handleSubmit}
         >
           <div className="form-heading">
-            <h1 id="login-heading">Welcome Back</h1>
+            <h1 id="register-heading">Create Account</h1>
             <p>
-              Sign in to Book your next cut, manage upcoming visits, and keep
-              track your barber.
+              Join to book appointments, track your favorite barber, and get
+              reminders before every visit.
             </p>
           </div>
 
-          <label className="field-group" htmlFor="email">
-            <span>Email</span>
-            <input id="email" name="email" type="email" placeholder="your@email" />
+          <label className="field-group" htmlFor="fullname">
+            <span>Fullname</span>
+            <input id="fullname" name="fullname" type="text" placeholder="Juan Dela Cruz" />
           </label>
 
-          <label className="field-group" htmlFor="password">
+          <label className="field-group" htmlFor="register-email">
+            <span>Email</span>
+            <input
+              id="register-email"
+              name="email"
+              type="email"
+              placeholder="your@email"
+            />
+          </label>
+
+          <label className="field-group" htmlFor="phone">
+            <span>Phone</span>
+            <div className="phone-field">
+              <span>+63</span>
+              <input
+                id="phone"
+                name="phone"
+                type="tel"
+                inputMode="numeric"
+                pattern="9\d{9}"
+                maxLength="10"
+                placeholder="9626881002"
+                title="Enter the 10 digits after +63, like 9626881002."
+                value={phone}
+                onChange={(event) => {
+                  setPhone(event.target.value.replace(/\D/g, '').slice(0, 10))
+                }}
+              />
+            </div>
+          </label>
+
+          <label className="field-group" htmlFor="register-password">
             <span>Password</span>
             <div className="password-field">
               <input
-                id="password"
+                id="register-password"
                 name="password"
                 type={isPasswordVisible ? 'text' : 'password'}
-                placeholder="*******"
+                placeholder="at least 8 characters"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
               />
               <button
                 aria-label={isPasswordVisible ? 'Hide password' : 'Show password'}
@@ -195,15 +248,44 @@ export default function LoginPage({ onCreateAccount }) {
                 <EyeIcon isVisible={isPasswordVisible} />
               </button>
             </div>
+            <div className="password-meter" data-strength={passwordStrength.level}>
+              <span className="password-meter-track">
+                <span className="password-meter-fill" />
+              </span>
+              <span>{passwordStrength.label}</span>
+            </div>
           </label>
 
-          <div className="form-options">
-            <label className="check-option" htmlFor="keep-signed-in">
-              <input id="keep-signed-in" name="remember" type="checkbox" />
-              <span>Keep me signed in</span>
-            </label>
-            <a href="#forgot-password">Forgot Password?</a>
-          </div>
+          <label className="field-group" htmlFor="confirm-password">
+            <span>Confirm Password</span>
+            <div className="password-field">
+              <input
+                id="confirm-password"
+                name="confirmPassword"
+                type={isConfirmPasswordVisible ? 'text' : 'password'}
+                placeholder="Re-enter password"
+              />
+              <button
+                aria-label={
+                  isConfirmPasswordVisible ? 'Hide confirm password' : 'Show confirm password'
+                }
+                className="icon-button"
+                type="button"
+                onClick={() => setIsConfirmPasswordVisible((current) => !current)}
+              >
+                <EyeIcon isVisible={isConfirmPasswordVisible} />
+              </button>
+            </div>
+          </label>
+
+          <label className="check-option terms-option" htmlFor="terms">
+            <input id="terms" name="terms" type="checkbox" />
+            <span>
+              I agree to the <a href="#terms">Terms of Service</a> and{' '}
+              <a href="#privacy">Privacy Policy</a>, and consent to receive
+              booking reminders.
+            </span>
+          </label>
 
           <motion.button
             className="primary-button"
@@ -211,7 +293,7 @@ export default function LoginPage({ onCreateAccount }) {
             whileHover={shouldReduceMotion ? undefined : { y: -1 }}
             whileTap={shouldReduceMotion ? undefined : { scale: 0.98 }}
           >
-            Sign In
+            Create Account
           </motion.button>
 
           <div className="divider" aria-label="or continue with">
@@ -229,18 +311,28 @@ export default function LoginPage({ onCreateAccount }) {
           </motion.button>
 
           <p className="signup-prompt">
-            New Customer?{' '}
+            Already have an account?{' '}
             <a
-              href="#register"
+              href="#login"
               onClick={(event) => {
                 event.preventDefault()
-                onCreateAccount?.()
+                onSignIn?.()
               }}
             >
-              Create an account
+              Sign in
             </a>
           </p>
         </motion.form>
+      </section>
+
+      <section className="brand-panel register-brand-panel" aria-label="Register workspace">
+        <div className="brand-content register-brand-content">
+          <motion.h2 initial={headingStart} animate={headingControls}>
+            Find your chair.
+            <br />
+            Book your <span>cut.</span>
+          </motion.h2>
+        </div>
       </section>
     </main>
   )
