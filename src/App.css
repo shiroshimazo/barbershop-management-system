@@ -29,6 +29,18 @@
   grid-template-columns: minmax(420px, 1.05fr) minmax(320px, 0.95fr);
 }
 
+.forgot-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 18px;
+  padding: 20px;
+  background: #f5f0e8;
+  color: #1a1a1a;
+}
+
 .brand-panel {
   position: relative;
   display: flex;
@@ -83,6 +95,294 @@
   border-radius: 8px;
   background: rgba(255, 252, 247, 0.78);
   box-shadow: 0 24px 70px rgba(26, 26, 26, 0.08);
+}
+
+.forgot-form {
+  width: min(100%, 414px);
+  padding: 30px 32px;
+  border: 1px solid rgba(26, 26, 26, 0.1);
+  border-radius: 12px;
+  background: rgba(255, 252, 247, 0.82);
+  box-shadow: 0 24px 70px rgba(26, 26, 26, 0.08);
+}
+
+.back-button {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  margin-bottom: 16px;
+  place-items: center;
+  border: 1px solid rgba(26, 26, 26, 0.12);
+  border-radius: 999px;
+  background: #fffaf3;
+  color: #1a1a1a;
+  cursor: pointer;
+  transition:
+    border-color 180ms ease,
+    color 180ms ease,
+    transform 180ms ease;
+}
+
+.back-button:hover,
+.back-button:focus-visible {
+  border-color: #d94f3d;
+  color: #d94f3d;
+  transform: translateX(-1px);
+}
+
+.back-button svg {
+  width: 20px;
+  height: 20px;
+}
+
+.forgot-heading {
+  margin-bottom: 20px;
+}
+
+.forgot-heading h1 {
+  margin: 0 0 6px;
+  font-size: clamp(2rem, 5vw, 2.5rem);
+  line-height: 1;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.forgot-heading p {
+  margin: 0;
+  color: rgba(26, 26, 26, 0.78);
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+.step-progress {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.step-progress span {
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(26, 26, 26, 0.12);
+}
+
+.step-progress[data-step='1'] span:nth-child(1),
+.step-progress[data-step='2'] span:nth-child(-n + 2),
+.step-progress[data-step='3'] span {
+  background: #1a1a1a;
+}
+
+.forgot-field {
+  margin-bottom: 14px;
+  color: rgba(26, 26, 26, 0.58);
+  font-size: 0.82rem;
+}
+
+.forgot-field > span,
+.forgot-label {
+  color: #1a1a1a;
+  font-weight: 800;
+}
+
+.inline-action-field {
+  display: grid;
+  grid-template-columns: 1fr 78px;
+  gap: 8px;
+}
+
+.inline-action-field > button {
+  min-height: 44px;
+  border: 1px solid #111217;
+  border-radius: 8px;
+  background: #111217;
+  color: #fffaf3;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 800;
+  cursor: pointer;
+  transition:
+    background-color 180ms ease,
+    border-color 180ms ease,
+    color 180ms ease;
+}
+
+.inline-action-field > button:hover,
+.inline-action-field > button:focus-visible {
+  border-color: #d94f3d;
+  background: #d94f3d;
+}
+
+.inline-action-field > button:disabled {
+  border-color: transparent;
+  background: rgba(26, 26, 26, 0.1);
+  color: rgba(26, 26, 26, 0.42);
+  cursor: not-allowed;
+}
+
+.icon-field {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.icon-field input {
+  padding-left: 42px;
+}
+
+.icon-field .field-icon {
+  position: absolute;
+  left: 13px;
+  width: 18px;
+  height: 18px;
+  color: rgba(26, 26, 26, 0.42);
+  pointer-events: none;
+}
+
+.code-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.code-grid input {
+  width: 100%;
+  aspect-ratio: 1;
+  border: 1px solid rgba(26, 26, 26, 0.32);
+  border-radius: 8px;
+  background: #fffaf3;
+  color: #1a1a1a;
+  font: inherit;
+  font-size: 1.25rem;
+  font-weight: 800;
+  text-align: center;
+  outline: none;
+  transition:
+    border-color 180ms ease,
+    box-shadow 180ms ease;
+}
+
+.code-grid input:focus {
+  border-color: #d94f3d;
+  box-shadow: 0 0 0 4px rgba(217, 79, 61, 0.14);
+}
+
+.code-grid input:disabled,
+.field-group input:disabled,
+.password-reset-fields:disabled input {
+  border-color: rgba(26, 26, 26, 0.08);
+  background: rgba(255, 252, 247, 0.42);
+  color: rgba(26, 26, 26, 0.4);
+  cursor: not-allowed;
+}
+
+.code-help {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 8px;
+  color: rgba(26, 26, 26, 0.38);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.code-help button {
+  flex: 0 0 auto;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.code-help button:not(:disabled):hover,
+.code-help button:not(:disabled):focus-visible {
+  color: #d94f3d;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+.code-help button:disabled {
+  cursor: not-allowed;
+}
+
+.password-reset-fields {
+  display: contents;
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+
+.segmented-meter {
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.segmented-meter .password-meter-fill {
+  width: 0;
+}
+
+.segmented-meter[data-strength='weak'] .password-meter-track:nth-child(1) .password-meter-fill,
+.segmented-meter[data-strength='good'] .password-meter-track:nth-child(-n + 2) .password-meter-fill,
+.segmented-meter[data-strength='strong'] .password-meter-fill {
+  width: 100%;
+}
+
+.reset-button {
+  margin-top: 20px;
+}
+
+.primary-button:disabled,
+.reset-button:disabled {
+  border-color: transparent;
+  background: rgba(26, 26, 26, 0.1);
+  color: rgba(26, 26, 26, 0.42);
+  box-shadow: none;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.primary-button:disabled:hover,
+.primary-button:disabled:focus-visible {
+  border-color: transparent;
+  background: rgba(26, 26, 26, 0.1);
+  color: rgba(26, 26, 26, 0.42);
+  box-shadow: none;
+  transform: none;
+}
+
+.support-prompt {
+  margin: 0;
+  color: rgba(26, 26, 26, 0.68);
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+
+.support-prompt a {
+  color: #1a1a1a;
+  font-weight: 800;
+  text-decoration-line: underline;
+  text-decoration-color: currentColor;
+  text-underline-offset: 4px;
+  transition: color 180ms ease;
+}
+
+.support-prompt a:hover,
+.support-prompt a:focus-visible {
+  color: #d94f3d;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  clip-path: inset(50%);
 }
 
 .register-form {
@@ -206,6 +506,14 @@
 }
 
 .password-field input {
+  padding-right: 52px;
+}
+
+.forgot-form .icon-field input {
+  padding-left: 44px;
+}
+
+.forgot-form .password-field.icon-field input {
   padding-right: 52px;
 }
 

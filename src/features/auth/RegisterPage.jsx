@@ -137,12 +137,12 @@ export default function RegisterPage({ onSignIn }) {
 
     formControls.start({
       ...slideAnimation,
-      transition: softTransition,
+      transition: { ...softTransition, delay: shouldReduceMotion ? 0 : 0.32 },
     })
 
     headingControls.start({
       ...slideAnimation,
-      transition: { ...softTransition, delay: shouldReduceMotion ? 0 : 0.32 },
+      transition: softTransition,
     })
   }, [
     formControls,

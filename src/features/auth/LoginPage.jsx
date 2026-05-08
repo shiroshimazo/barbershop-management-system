@@ -81,7 +81,7 @@ function GoogleIcon() {
   )
 }
 
-export default function LoginPage({ onCreateAccount }) {
+export default function LoginPage({ onCreateAccount, onForgotPassword }) {
   const [isPasswordVisible, setIsPasswordVisible] = useState(false)
   const [toastMessage, setToastMessage] = useState('')
   const shouldReduceMotion = useReducedMotion()
@@ -202,7 +202,15 @@ export default function LoginPage({ onCreateAccount }) {
               <input id="keep-signed-in" name="remember" type="checkbox" />
               <span>Keep me signed in</span>
             </label>
-            <a href="#forgot-password">Forgot Password?</a>
+            <a
+              href="#forgot-password"
+              onClick={(event) => {
+                event.preventDefault()
+                onForgotPassword?.()
+              }}
+            >
+              Forgot Password?
+            </a>
           </div>
 
           <motion.button
