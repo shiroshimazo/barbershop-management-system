@@ -206,11 +206,13 @@ export default function RegisterPage({ onSignIn }) {
     }
 
     if (data.session) {
+      // Email confirmation disabled — App.jsx session listener routes to dashboard.
       onSignIn?.()
       return
     }
 
-    setToastMessage('Account created. Check your email to confirm, then sign in.')
+    setToastMessage('Account created! Check your email to confirm, then sign in.')
+    window.setTimeout(() => onSignIn?.(), 2800)
   }
 
   return (
