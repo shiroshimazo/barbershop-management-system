@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { motion, useAnimationControls, useReducedMotion } from 'framer-motion'
 import Toast from '../../components/Toast.jsx'
+import { supabase } from '../../lib/supabase.js'
 
 function EyeIcon({ isVisible }) {
   return (
@@ -81,9 +82,10 @@ function GoogleIcon() {
   )
 }
 
-export default function LoginPage({ onCreateAccount, onForgotPassword }) {
+export default function LoginPage({ onCreateAccount, onForgotPassword, onSignIn }) {
   const [isPasswordVisible, setIsPasswordVisible] = useState(false)
   const [toastMessage, setToastMessage] = useState('')
+  const [isSubmitting, setIsSubmitting] = useState(false)
   const shouldReduceMotion = useReducedMotion()
   const headingControls = useAnimationControls()
   const formControls = useAnimationControls()
@@ -134,16 +136,28 @@ export default function LoginPage({ onCreateAccount, onForgotPassword }) {
     softTransition,
   ])
 
-  const handleSubmit = (event) => {
+  const handleSubmit = async (event) => {
     event.preventDefault()
 
     const formData = new FormData(event.currentTarget)
     const email = formData.get('email')?.toString().trim()
-    const password = formData.get('password')?.toString().trim()
+    const password = formData.get('password')?.toString()
 
     if (!email || !password) {
       setToastMessage('Please fill in all text fields.')
+      return
     }
+
+    setIsSubmitting(true)
+    const { error } = await supabase.auth.signInWithPassword({ email, password })
+    setIsSubmitting(false)
+
+    if (error) {
+      setToastMessage(error.message || 'Sign in failed. Try again.')
+      return
+    }
+
+    onSignIn?.()
   }
 
   return (
@@ -216,10 +230,11 @@ export default function LoginPage({ onCreateAccount, onForgotPassword }) {
           <motion.button
             className="primary-button"
             type="submit"
-            whileHover={shouldReduceMotion ? undefined : { y: -1 }}
-            whileTap={shouldReduceMotion ? undefined : { scale: 0.98 }}
+            disabled={isSubmitting}
+            whileHover={shouldReduceMotion || isSubmitting ? undefined : { y: -1 }}
+            whileTap={shouldReduceMotion || isSubmitting ? undefined : { scale: 0.98 }}
           >
-            Sign In
+            {isSubmitting ? 'Signing in...' : 'Sign In'}
           </motion.button>
 
           <div className="divider" aria-label="or continue with">

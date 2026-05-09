@@ -20,6 +20,23 @@ coverage
 .env.*
 !.env.example
 
+# Claude Code / AI tooling
+.claude/
+.cursor/
+.aider*
+CLAUDE.local.md
+
+# OS
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Misc
+*.tmp
+*.bak
+*.orig
+
 # Deployment / hosting
 .vercel
 .netlify

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { motion, useAnimationControls, useReducedMotion } from 'framer-motion'
 import Toast from '../../components/Toast.jsx'
+import { supabase } from '../../lib/supabase.js'
 
 function EyeIcon({ isVisible }) {
   return (
@@ -102,6 +103,7 @@ export default function RegisterPage({ onSignIn }) {
   const [isPasswordVisible, setIsPasswordVisible] = useState(false)
   const [isConfirmPasswordVisible, setIsConfirmPasswordVisible] = useState(false)
   const [toastMessage, setToastMessage] = useState('')
+  const [isSubmitting, setIsSubmitting] = useState(false)
   const shouldReduceMotion = useReducedMotion()
   const formControls = useAnimationControls()
   const headingControls = useAnimationControls()
@@ -154,24 +156,61 @@ export default function RegisterPage({ onSignIn }) {
     softTransition,
   ])
 
-  const handleSubmit = (event) => {
+  const handleSubmit = async (event) => {
     event.preventDefault()
 
     const formData = new FormData(event.currentTarget)
-    const requiredFields = [
-      'fullname',
-      'email',
-      'phone',
-      'password',
-      'confirmPassword',
-    ]
-    const hasEmptyField = requiredFields.some(
-      (field) => !formData.get(field)?.toString().trim(),
-    )
+    const fullname = formData.get('fullname')?.toString().trim()
+    const email = formData.get('email')?.toString().trim()
+    const phoneValue = formData.get('phone')?.toString().trim()
+    const passwordValue = formData.get('password')?.toString()
+    const confirmPasswordValue = formData.get('confirmPassword')?.toString()
+    const termsAccepted = formData.get('terms') === 'on'
 
-    if (hasEmptyField) {
+    if (!fullname || !email || !phoneValue || !passwordValue || !confirmPasswordValue) {
       setToastMessage('Please fill in all text fields.')
+      return
     }
+
+    if (passwordValue.length < 8) {
+      setToastMessage('Password must be at least 8 characters.')
+      return
+    }
+
+    if (passwordValue !== confirmPasswordValue) {
+      setToastMessage('Passwords do not match.')
+      return
+    }
+
+    if (!termsAccepted) {
+      setToastMessage('Please accept the Terms of Service to continue.')
+      return
+    }
+
+    setIsSubmitting(true)
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password: passwordValue,
+      options: {
+        data: {
+          fullname,
+          phone: `+63${phoneValue}`,
+        },
+      },
+    })
+    setIsSubmitting(false)
+
+    if (error) {
+      setToastMessage(error.message || 'Sign up failed. Try again.')
+      return
+    }
+
+    if (data.session) {
+      onSignIn?.()
+      return
+    }
+
+    setToastMessage('Account created. Check your email to confirm, then sign in.')
   }
 
   return (
@@ -290,10 +329,11 @@ export default function RegisterPage({ onSignIn }) {
           <motion.button
             className="primary-button"
             type="submit"
-            whileHover={shouldReduceMotion ? undefined : { y: -1 }}
-            whileTap={shouldReduceMotion ? undefined : { scale: 0.98 }}
+            disabled={isSubmitting}
+            whileHover={shouldReduceMotion || isSubmitting ? undefined : { y: -1 }}
+            whileTap={shouldReduceMotion || isSubmitting ? undefined : { scale: 0.98 }}
           >
-            Create Account
+            {isSubmitting ? 'Creating account...' : 'Create Account'}
           </motion.button>
 
           <div className="divider" aria-label="or continue with">
