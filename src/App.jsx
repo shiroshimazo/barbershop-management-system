@@ -38,8 +38,12 @@ function App() {
       setIsAuthLoading(false)
     })
 
-    const { data: subscription } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+    const { data: subscription } = supabase.auth.onAuthStateChange((event, nextSession) => {
       if (!isMounted) return
+      // Recovery session must not route to the dashboard — the forgot-password
+      // page needs the supabase client session to call updateUser, but the
+      // React session state stays null until the user signs in normally.
+      if (event === 'PASSWORD_RECOVERY') return
       setSession(nextSession)
     })
 

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { motion, useReducedMotion } from 'framer-motion'
 import Toast from '../../components/Toast.jsx'
+import { supabase } from '../../lib/supabase.js'
 
 function EyeIcon({ isVisible }) {
   return (
@@ -102,15 +103,23 @@ export default function ForgotPasswordPage({ onBack }) {
   const [toastMessage, setToastMessage] = useState('')
   const [isPasswordVisible, setIsPasswordVisible] = useState(false)
   const [isConfirmPasswordVisible, setIsConfirmPasswordVisible] = useState(false)
-  const [resendSeconds, setResendSeconds] = useState(30)
+  const [resendSeconds, setResendSeconds] = useState(60)
+  const [isSendingEmail, setIsSendingEmail] = useState(false)
+  const [isVerifyingCode, setIsVerifyingCode] = useState(false)
+  const [isSubmitting, setIsSubmitting] = useState(false)
   const shouldReduceMotion = useReducedMotion()
   const codeRefs = useRef([])
   const passwordStrength = getPasswordStrength(password)
 
-  const codeValue = code.join('')
   const isEmailLocked = step > 1
   const isCodeActive = step === 2
   const isPasswordActive = step === 3
+
+  const formatCountdown = (totalSeconds) => {
+    const minutes = Math.floor(totalSeconds / 60)
+    const seconds = totalSeconds % 60
+    return `${minutes}:${seconds.toString().padStart(2, '0')}`
+  }
 
   const formMotion = useMemo(
     () => ({
@@ -131,21 +140,68 @@ export default function ForgotPasswordPage({ onBack }) {
     return () => window.clearTimeout(timeoutId)
   }, [isCodeActive, resendSeconds])
 
-  useEffect(() => {
-    if (step === 2 && codeValue.length === 6) {
-      window.setTimeout(() => setStep(3), 180)
-    }
-  }, [codeValue, step])
+  const verifyCode = async (token) => {
+    if (isVerifyingCode) return
 
-  const handleSendEmail = () => {
-    if (!email.trim()) {
+    setIsVerifyingCode(true)
+    const { error } = await supabase.auth.verifyOtp({
+      email: email.trim(),
+      token,
+      type: 'recovery',
+    })
+    setIsVerifyingCode(false)
+
+    if (error) {
+      setToastMessage(error.message || 'Invalid or expired code.')
+      setCode(Array(6).fill(''))
+      codeRefs.current[0]?.focus()
+      return
+    }
+
+    setStep(3)
+  }
+
+  const sendRecoveryEmail = async (targetEmail) => {
+    const { error } = await supabase.auth.resetPasswordForEmail(targetEmail)
+    return error
+  }
+
+  const handleSendEmail = async () => {
+    const targetEmail = email.trim()
+
+    if (!targetEmail) {
       setToastMessage('Please enter your email.')
       return
     }
 
+    setIsSendingEmail(true)
+    const error = await sendRecoveryEmail(targetEmail)
+    setIsSendingEmail(false)
+
+    if (error) {
+      setToastMessage(error.message || 'Could not send recovery email.')
+      return
+    }
+
     setStep(2)
-    setResendSeconds(30)
+    setResendSeconds(60)
+    setToastMessage('Check your email for the 6-digit code.')
     window.setTimeout(() => codeRefs.current[0]?.focus(), 60)
+  }
+
+  const handleResendCode = async () => {
+    const targetEmail = email.trim()
+    if (!targetEmail) return
+
+    const error = await sendRecoveryEmail(targetEmail)
+
+    if (error) {
+      setToastMessage(error.message || 'Could not resend code.')
+      return
+    }
+
+    setResendSeconds(60)
+    setToastMessage('A new code has been sent.')
   }
 
   const handleCodeChange = (index, value) => {
@@ -158,6 +214,11 @@ export default function ForgotPasswordPage({ onBack }) {
 
     if (digit && index < codeRefs.current.length - 1) {
       codeRefs.current[index + 1]?.focus()
+    }
+
+    const nextValue = nextCode.join('')
+    if (nextValue.length === 6) {
+      verifyCode(nextValue)
     }
   }
 
@@ -180,9 +241,13 @@ export default function ForgotPasswordPage({ onBack }) {
       nextCode[index] = digit
     })
     setCode(nextCode)
+
+    if (pastedCode.length === 6) {
+      verifyCode(pastedCode)
+    }
   }
 
-  const handleSubmit = (event) => {
+  const handleSubmit = async (event) => {
     event.preventDefault()
 
     if (step < 3) {
@@ -195,9 +260,29 @@ export default function ForgotPasswordPage({ onBack }) {
       return
     }
 
+    if (password.length < 8) {
+      setToastMessage('Password must be at least 8 characters.')
+      return
+    }
+
     if (password !== confirmPassword) {
       setToastMessage('Passwords do not match.')
+      return
     }
+
+    setIsSubmitting(true)
+    const { error: updateError } = await supabase.auth.updateUser({ password })
+
+    if (updateError) {
+      setIsSubmitting(false)
+      setToastMessage(updateError.message || 'Could not update password.')
+      return
+    }
+
+    await supabase.auth.signOut()
+    setIsSubmitting(false)
+    setToastMessage('Password reset! You can sign in now.')
+    window.setTimeout(() => onBack?.(), 1800)
   }
 
   return (
@@ -253,8 +338,12 @@ export default function ForgotPasswordPage({ onBack }) {
                 onChange={(event) => setEmail(event.target.value)}
               />
             </div>
-            <button type="button" disabled={isEmailLocked} onClick={handleSendEmail}>
-              Send
+            <button
+              type="button"
+              disabled={isEmailLocked || isSendingEmail}
+              onClick={handleSendEmail}
+            >
+              {isSendingEmail ? 'Sending...' : 'Send'}
             </button>
           </div>
         </label>
@@ -284,9 +373,9 @@ export default function ForgotPasswordPage({ onBack }) {
             <button
               type="button"
               disabled={!isCodeActive || resendSeconds > 0}
-              onClick={() => setResendSeconds(30)}
+              onClick={handleResendCode}
             >
-              {resendSeconds > 0 ? `Resend in ${resendSeconds}s` : 'Resend code'}
+              {resendSeconds > 0 ? `Resend in ${formatCountdown(resendSeconds)}` : 'Resend code'}
             </button>
           </div>
         </div>
@@ -350,11 +439,11 @@ export default function ForgotPasswordPage({ onBack }) {
         <motion.button
           className="primary-button reset-button"
           type="submit"
-          disabled={!isPasswordActive}
-          whileHover={shouldReduceMotion || !isPasswordActive ? undefined : { y: -1 }}
-          whileTap={shouldReduceMotion || !isPasswordActive ? undefined : { scale: 0.98 }}
+          disabled={!isPasswordActive || isSubmitting}
+          whileHover={shouldReduceMotion || !isPasswordActive || isSubmitting ? undefined : { y: -1 }}
+          whileTap={shouldReduceMotion || !isPasswordActive || isSubmitting ? undefined : { scale: 0.98 }}
         >
-          Reset Password
+          {isSubmitting ? 'Resetting...' : 'Reset Password'}
         </motion.button>
       </motion.form>
 

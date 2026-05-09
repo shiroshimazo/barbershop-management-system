@@ -13,6 +13,9 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     persistSession: true,
     autoRefreshToken: true,
-    detectSessionInUrl: true,
+    // We use a 6-digit OTP for password recovery, not magic links.
+    // Disabling URL detection prevents accidental auto-login if a recovery
+    // link is ever clicked (e.g. an old email or copy/pasted URL).
+    detectSessionInUrl: false,
   },
 })
