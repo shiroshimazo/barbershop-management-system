@@ -1,16 +1,30 @@
 import { useEffect, useState } from 'react'
+import BookAppointmentPage from './Customer/BookAppointmentPage.jsx'
 import CustomerDashboard from './Customer/CustomerDashboard.jsx'
+import CustomerShell from './Customer/CustomerShell.jsx'
+import MyAppointmentsPage from './Customer/MyAppointmentsPage.jsx'
 import ForgotPasswordPage from './features/auth/ForgotPasswordPage.jsx'
 import LoginPage from './features/auth/LoginPage.jsx'
 import RegisterPage from './features/auth/RegisterPage.jsx'
 import { supabase } from './lib/supabase.js'
 import './App.css'
 
-function getPageFromHash() {
-  if (window.location.hash === '#register') return 'register'
-  if (window.location.hash === '#forgot-password') return 'forgot-password'
-  if (window.location.hash === '#dashboard') return 'dashboard'
+const AUTH_PAGES = new Set(['login', 'register', 'forgot-password'])
+const CUSTOMER_PAGES = new Set([
+  'dashboard',
+  'book',
+  'appointments',
+  'history',
+  'favourites',
+  'profile',
+  'notifications',
+  'settings',
+])
 
+function getPageFromHash() {
+  const hash = window.location.hash.replace('#', '')
+  if (AUTH_PAGES.has(hash)) return hash
+  if (CUSTOMER_PAGES.has(hash)) return hash
   return 'login'
 }
 
@@ -23,9 +37,7 @@ function App() {
     const handleHashChange = () => {
       setPage(getPageFromHash())
     }
-
     window.addEventListener('hashchange', handleHashChange)
-
     return () => window.removeEventListener('hashchange', handleHashChange)
   }, [])
 
@@ -53,29 +65,14 @@ function App() {
     }
   }, [])
 
-  const goToRegister = () => {
-    window.location.hash = 'register'
-    setPage('register')
-  }
-
-  const goToLogin = () => {
-    window.location.hash = 'login'
-    setPage('login')
-  }
-
-  const goToForgotPassword = () => {
-    window.location.hash = 'forgot-password'
-    setPage('forgot-password')
-  }
-
-  const goToDashboard = () => {
-    window.location.hash = 'dashboard'
-    setPage('dashboard')
+  const navigate = (target) => {
+    window.location.hash = target
+    setPage(target)
   }
 
   const handleLogout = async () => {
     await supabase.auth.signOut()
-    goToLogin()
+    navigate('login')
   }
 
   if (isAuthLoading) {
@@ -83,22 +80,56 @@ function App() {
   }
 
   if (session) {
-    return <CustomerDashboard onLogout={handleLogout} />
+    const customerPage = CUSTOMER_PAGES.has(page) ? page : 'dashboard'
+    const activeNav = customerPage === 'book' ? 'book' : customerPage
+
+    return (
+      <CustomerShell
+        activeNav={activeNav}
+        onNavigate={navigate}
+        onLogout={handleLogout}
+      >
+        {({ onOpenSidebar }) => {
+          if (customerPage === 'book') {
+            return (
+              <BookAppointmentPage
+                onOpenSidebar={onOpenSidebar}
+                onBack={() => navigate('dashboard')}
+              />
+            )
+          }
+          if (customerPage === 'appointments') {
+            return (
+              <MyAppointmentsPage
+                onOpenSidebar={onOpenSidebar}
+                onNavigate={navigate}
+              />
+            )
+          }
+          return (
+            <CustomerDashboard
+              onOpenSidebar={onOpenSidebar}
+              onNavigate={navigate}
+            />
+          )
+        }}
+      </CustomerShell>
+    )
   }
 
   if (page === 'register') {
-    return <RegisterPage onSignIn={goToLogin} />
+    return <RegisterPage onSignIn={() => navigate('login')} />
   }
 
   if (page === 'forgot-password') {
-    return <ForgotPasswordPage onBack={goToLogin} />
+    return <ForgotPasswordPage onBack={() => navigate('login')} />
   }
 
   return (
     <LoginPage
-      onCreateAccount={goToRegister}
-      onForgotPassword={goToForgotPassword}
-      onSignIn={goToDashboard}
+      onCreateAccount={() => navigate('register')}
+      onForgotPassword={() => navigate('forgot-password')}
+      onSignIn={() => navigate('dashboard')}
     />
   )
 }
