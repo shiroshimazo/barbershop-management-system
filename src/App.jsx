@@ -7,6 +7,7 @@ import HistoryPage from './Customer/HistoryPage.jsx'
 import MyAppointmentsPage from './Customer/MyAppointmentsPage.jsx'
 import MyProfilePage from './Customer/MyProfilePage.jsx'
 import NotificationsPage from './Customer/NotificationsPage.jsx'
+import SettingsPage from './Customer/SettingsPage.jsx'
 import ForgotPasswordPage from './features/auth/ForgotPasswordPage.jsx'
 import LoginPage from './features/auth/LoginPage.jsx'
 import RegisterPage from './features/auth/RegisterPage.jsx'
@@ -32,10 +33,22 @@ function getPageFromHash() {
   return 'login'
 }
 
+function getInitialTheme() {
+  const saved = localStorage.getItem('bladeco.theme')
+  if (saved === 'dark' || saved === 'light') return saved
+  return 'light'
+}
+
 function App() {
   const [page, setPage] = useState(getPageFromHash)
   const [session, setSession] = useState(null)
   const [isAuthLoading, setIsAuthLoading] = useState(true)
+  const [theme, setTheme] = useState(getInitialTheme)
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme)
+    localStorage.setItem('bladeco.theme', theme)
+  }, [theme])
 
   useEffect(() => {
     const handleHashChange = () => {
@@ -139,6 +152,16 @@ function App() {
               <NotificationsPage
                 onOpenSidebar={onOpenSidebar}
                 onNavigate={navigate}
+              />
+            )
+          }
+          if (customerPage === 'settings') {
+            return (
+              <SettingsPage
+                onOpenSidebar={onOpenSidebar}
+                onNavigate={navigate}
+                theme={theme}
+                onThemeChange={setTheme}
               />
             )
           }

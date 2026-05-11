@@ -152,24 +152,18 @@ function CustomerSidebar({ activeId, isOpen, onClose, onNavigate, onLogoutReques
       />
 
       <button
-        className="customer-nav-item customer-logout-item"
+        className="customer-logout-foot"
         type="button"
         onClick={onLogoutRequest}
       >
-        <Icon name="logout" />
-        <span>Log out</span>
-      </button>
-
-      <div className="customer-user-foot">
-        <span className="customer-avatar">M</span>
-        <span>
-          <strong>Marcus R.</strong>
-          <small>Member - Gold</small>
+        <span className="customer-logout-icon">
+          <Icon name="logout" />
         </span>
-        <button aria-label="Open account menu" type="button">
-          ...
-        </button>
-      </div>
+        <span className="customer-logout-text">
+          <strong>Log out</strong>
+          <small>End this session</small>
+        </span>
+      </button>
     </aside>
   )
 }
