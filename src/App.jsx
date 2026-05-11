@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import BookAppointmentPage from './Customer/BookAppointmentPage.jsx'
 import CustomerDashboard from './Customer/CustomerDashboard.jsx'
 import CustomerShell from './Customer/CustomerShell.jsx'
+import FavouritesPage from './Customer/FavouritesPage.jsx'
 import HistoryPage from './Customer/HistoryPage.jsx'
 import MyAppointmentsPage from './Customer/MyAppointmentsPage.jsx'
 import ForgotPasswordPage from './features/auth/ForgotPasswordPage.jsx'
@@ -110,6 +111,14 @@ function App() {
           if (customerPage === 'history') {
             return (
               <HistoryPage
+                onOpenSidebar={onOpenSidebar}
+                onNavigate={navigate}
+              />
+            )
+          }
+          if (customerPage === 'favourites') {
+            return (
+              <FavouritesPage
                 onOpenSidebar={onOpenSidebar}
                 onNavigate={navigate}
               />
