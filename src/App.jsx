@@ -5,6 +5,7 @@ import CustomerShell from './Customer/CustomerShell.jsx'
 import FavouritesPage from './Customer/FavouritesPage.jsx'
 import HistoryPage from './Customer/HistoryPage.jsx'
 import MyAppointmentsPage from './Customer/MyAppointmentsPage.jsx'
+import MyProfilePage from './Customer/MyProfilePage.jsx'
 import ForgotPasswordPage from './features/auth/ForgotPasswordPage.jsx'
 import LoginPage from './features/auth/LoginPage.jsx'
 import RegisterPage from './features/auth/RegisterPage.jsx'
@@ -119,6 +120,14 @@ function App() {
           if (customerPage === 'favourites') {
             return (
               <FavouritesPage
+                onOpenSidebar={onOpenSidebar}
+                onNavigate={navigate}
+              />
+            )
+          }
+          if (customerPage === 'profile') {
+            return (
+              <MyProfilePage
                 onOpenSidebar={onOpenSidebar}
                 onNavigate={navigate}
               />
