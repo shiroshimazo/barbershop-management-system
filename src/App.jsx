@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import AdminPage from './Admin/AdminPage.jsx'
 import BookAppointmentPage from './Customer/BookAppointmentPage.jsx'
 import CustomerDashboard from './Customer/CustomerDashboard.jsx'
 import CustomerShell from './Customer/CustomerShell.jsx'
@@ -43,6 +44,8 @@ function App() {
   const [page, setPage] = useState(getPageFromHash)
   const [session, setSession] = useState(null)
   const [isAuthLoading, setIsAuthLoading] = useState(true)
+  const [userRole, setUserRole] = useState(null)
+  const [roleForUserId, setRoleForUserId] = useState(null)
   const [theme, setTheme] = useState(getInitialTheme)
 
   useEffect(() => {
@@ -82,6 +85,27 @@ function App() {
     }
   }, [])
 
+  const sessionUserId = session?.user?.id ?? null
+  const isRoleLoading = !!sessionUserId && roleForUserId !== sessionUserId
+
+  useEffect(() => {
+    if (!sessionUserId) return undefined
+    let cancelled = false
+    supabase
+      .from('customers')
+      .select('role')
+      .eq('id', sessionUserId)
+      .single()
+      .then(({ data }) => {
+        if (cancelled) return
+        setUserRole(data?.role === 'admin' ? 'admin' : 'customer')
+        setRoleForUserId(sessionUserId)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [sessionUserId])
+
   const navigate = (target) => {
     window.location.hash = target
     setPage(target)
@@ -94,6 +118,14 @@ function App() {
 
   if (isAuthLoading) {
     return null
+  }
+
+  if (session && isRoleLoading) {
+    return null
+  }
+
+  if (session && userRole === 'admin') {
+    return <AdminPage session={session} onLogout={handleLogout} />
   }
 
   if (session) {

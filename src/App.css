@@ -7019,4 +7019,81 @@
 
 /* Detail row labels — already use rgba — keep as is */
 
+/* ============================================================
+   Admin page (.admin-*) — minimal scaffold, body intentionally blank
+   ============================================================ */
+.admin-page {
+  min-height: 100vh;
+  background: #ffffff;
+  color: #0f1115;
+  font-family: 'Hanken Grotesk', system-ui, sans-serif;
+  display: flex;
+  flex-direction: column;
+}
+.admin-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 28px;
+  border-bottom: 1px solid #e3ddcd;
+  background: #ffffff;
+}
+.admin-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+.admin-brand-mark {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: #b08a5a;
+  color: #0f1115;
+  font-family: 'Archivo Black', Impact, sans-serif;
+  font-size: 1rem;
+}
+.admin-brand strong {
+  font-family: 'Archivo Black', Impact, sans-serif;
+  font-size: 0.95rem;
+  letter-spacing: 0.02em;
+}
+.admin-topbar-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+}
+.admin-user {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #6f6a60;
+}
+.admin-logout {
+  display: inline-flex;
+  align-items: center;
+  height: 36px;
+  padding: 0 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(180, 69, 47, 0.35);
+  background: rgba(180, 69, 47, 0.1);
+  color: #b4452f;
+  font: inherit;
+  font-weight: 800;
+  font-size: 0.8rem;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+}
+.admin-logout:hover {
+  background: rgba(180, 69, 47, 0.18);
+  border-color: rgba(180, 69, 47, 0.5);
+  transform: translateY(-1px);
+}
+.admin-body {
+  flex: 1;
+  background: #ffffff;
+}
+
 
