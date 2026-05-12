@@ -3106,7 +3106,7 @@
   display: flex;
   flex-direction: column;
   gap: 20px;
-  padding: 32px 36px 60px;
+  padding: 28px 36px 36px;
   position: relative;
 }
 
@@ -3118,12 +3118,13 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 0.78rem;
-  color: var(--muted);
-  letter-spacing: 0.02em;
+  font-size: 0.86rem;
+  font-weight: 700;
+  color: var(--muted-2);
+
 }
 .hist-breadcrumb a {
-  color: var(--muted);
+  color: var(--muted-2);
   text-decoration: none;
   transition: color 0.15s ease;
 }
@@ -3797,7 +3798,7 @@
   display: flex;
   flex-direction: column;
   gap: 20px;
-  padding: 32px 36px 60px;
+  padding: 28px 36px 36px;
   position: relative;
 }
 
@@ -3809,12 +3810,13 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 0.78rem;
-  color: var(--muted);
-  letter-spacing: 0.02em;
+  font-size: 0.86rem;
+  font-weight: 700;
+  color: var(--muted-2);
+
 }
 .fav-breadcrumb a {
-  color: var(--muted);
+  color: var(--muted-2);
   text-decoration: none;
   transition: color 0.15s ease;
 }
@@ -4612,7 +4614,7 @@
   display: flex;
   flex-direction: column;
   gap: 20px;
-  padding: 32px 36px 60px;
+  padding: 28px 36px 36px;
   position: relative;
 }
 
@@ -4624,12 +4626,13 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 0.78rem;
-  color: var(--muted);
-  letter-spacing: 0.02em;
+  font-size: 0.86rem;
+  font-weight: 700;
+  color: var(--muted-2);
+
 }
 .mp-breadcrumb a {
-  color: var(--muted);
+  color: var(--muted-2);
   text-decoration: none;
   transition: color 0.15s ease;
 }
@@ -5388,7 +5391,7 @@
   display: flex;
   flex-direction: column;
   gap: 20px;
-  padding: 32px 36px 60px;
+  padding: 28px 36px 36px;
   position: relative;
 }
 
@@ -5400,12 +5403,12 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 0.78rem;
-  color: var(--muted);
-  letter-spacing: 0.02em;
+  font-size: 0.86rem;
+  font-weight: 700;
+  color: var(--muted-2);
 }
 .nt-breadcrumb a {
-  color: var(--muted);
+  color: var(--muted-2);
   text-decoration: none;
   transition: color 0.15s ease;
 }
@@ -6118,7 +6121,7 @@
   display: flex;
   flex-direction: column;
   gap: 20px;
-  padding: 32px 36px 60px;
+  padding: 28px 36px 36px;
   position: relative;
 }
 
@@ -6130,12 +6133,13 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 0.78rem;
-  color: var(--muted);
-  letter-spacing: 0.02em;
+  font-size: 0.86rem;
+  font-weight: 700;
+  color: var(--muted-2);
 }
+
 .st-breadcrumb a {
-  color: var(--muted);
+  color: var(--muted-2);
   text-decoration: none;
   transition: color 0.15s ease;
 }
