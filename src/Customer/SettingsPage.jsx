@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase.js'
+import ConfirmDialog from './ConfirmDialog.jsx'
+import Toast from '../components/Toast.jsx'
+import packageJson from '../../package.json'
 
 const DEFAULT_TOGGLES = {
   't-region': true,
@@ -15,6 +18,25 @@ const DEFAULT_TOGGLES = {
   't-export': true,
   't-diag': true,
   't-auto': false,
+}
+
+const PRESET_TOGGLES = {
+  Standard: DEFAULT_TOGGLES,
+  Private: {
+    ...DEFAULT_TOGGLES,
+    't-mkt': false,
+    't-analytics': false,
+    't-export': false,
+  },
+  Minimal: {
+    ...DEFAULT_TOGGLES,
+    't-quick': false,
+    't-mkt': false,
+    't-analytics': false,
+    't-alerts': false,
+    't-export': false,
+    't-diag': false,
+  },
 }
 
 const stats = [
@@ -378,7 +400,7 @@ const itemsByTab = {
       detail: {
         title: 'About',
         sub: 'Blade & Co. portal info.',
-        a: 'App version: 0.9 (wireframe)',
+        a: `App version: ${packageJson.version}`,
         b: 'Terms: Updated May 2026',
         c: 'Privacy: Updated May 2026',
         d: 'Licenses available',
@@ -745,8 +767,7 @@ function DetailPanel({
       )}
 
       <p className="st-note">
-        Prototype note: changes preview locally — hit &ldquo;Save changes&rdquo; in the page
-        head to commit.
+        Save changes syncs your presets and theme back to your customer profile.
       </p>
     </aside>
   )
@@ -775,6 +796,10 @@ export default function SettingsPage({
   const [dangerOpen, setDangerOpen] = useState(false)
   const [saveLabel, setSaveLabel] = useState('Save changes')
   const [dirty, setDirty] = useState(false)
+  const [toast, setToast] = useState('')
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [deleteConfirmEmail, setDeleteConfirmEmail] = useState('')
+  const [deleteSaving, setDeleteSaving] = useState(false)
 
   // Hydrate from customers.settings on mount
   useEffect(() => {
@@ -837,6 +862,12 @@ export default function SettingsPage({
     setDirty(true)
   }
 
+  const applyPreset = (nextPreset) => {
+    setPreset(nextPreset)
+    setToggles({ ...(PRESET_TOGGLES[nextPreset] || DEFAULT_TOGGLES) })
+    setDirty(true)
+  }
+
   const nudgeSave = () => {
     setDirty(true)
     const btn = document.getElementById('st-save')
@@ -855,6 +886,28 @@ export default function SettingsPage({
       onThemeChange(theme === 'dark' ? 'light' : 'dark')
       return
     }
+    if (item.id === 'reminders' && kind === 'secondary') {
+      setToast('Test reminder sent to your inbox.')
+      supabase.rpc('create_test_notification').then(({ error }) => {
+        if (error) {
+          setToast(`Couldn't send test notification: ${error.message}`)
+        }
+      })
+      return
+    }
+    if (item.id === 'sessions' && kind === 'primary') {
+      return handleSignOutAll()
+    }
+    if (item.id === 'export' && kind === 'primary') {
+      return onNavigate?.('history')
+    }
+    if (item.id === 'receipts' && kind === 'primary') {
+      return onNavigate?.('history')
+    }
+    if (item.id === 'support' && kind === 'primary') {
+      window.location.assign('mailto:support@bladeco.example')
+      return
+    }
     if (kind === 'secondary' && item.id === 'theme') {
       // toggle reduced motion — not wired; just nudge save
       nudgeSave()
@@ -866,12 +919,13 @@ export default function SettingsPage({
   const handleSave = async () => {
     if (!userId) return
     setSaveLabel('Saving...')
-    const { error } = await supabase
-      .from('customers')
-      .update({
-        settings: { toggles, preset, theme },
-      })
-      .eq('id', userId)
+    const { error } = await supabase.rpc('merge_settings', {
+      patch: {
+        toggles,
+        preset,
+        theme,
+      },
+    })
     if (error) {
       setSaveLabel('Save failed')
       setTimeout(() => setSaveLabel('Save changes'), 1500)
@@ -880,6 +934,33 @@ export default function SettingsPage({
     setSaveLabel('Saved')
     setDirty(false)
     setTimeout(() => setSaveLabel('Save changes'), 900)
+  }
+
+  const handleSignOutAll = async () => {
+    const { error } = await supabase.auth.signOut({ scope: 'global' })
+    if (error) {
+      setToast(`Couldn't sign out everywhere: ${error.message}`)
+      return
+    }
+    onNavigate?.('login')
+  }
+
+  const handleDeleteAccount = async () => {
+    if (!session?.user?.email) return
+    if (deleteConfirmEmail.trim().toLowerCase() !== session.user.email.trim().toLowerCase()) {
+      setToast('Type your email to confirm deletion.')
+      return
+    }
+    setDeleteSaving(true)
+    const { error } = await supabase.rpc('delete_my_account')
+    setDeleteSaving(false)
+    if (error) {
+      setToast(`Couldn't delete account: ${error.message}`)
+      return
+    }
+    await supabase.auth.signOut({ scope: 'global' })
+    setDeleteDialogOpen(false)
+    onNavigate?.('login')
   }
 
   const goBook = () => onNavigate?.('book')
@@ -894,6 +975,35 @@ export default function SettingsPage({
 
   return (
     <section className="customer-main st-page" aria-label="Settings">
+      <Toast message={toast} onClose={() => setToast('')} />
+      {deleteDialogOpen && (
+        <ConfirmDialog
+          title="Delete your account?"
+          description="Type your email address to confirm the delete request."
+          confirmLabel="Delete account"
+          cancelLabel="Keep account"
+          busy={deleteSaving}
+          confirmDisabled={
+            deleteConfirmEmail.trim().toLowerCase() !== session?.user?.email?.trim().toLowerCase()
+          }
+          onCancel={() => {
+            setDeleteDialogOpen(false)
+            setDeleteConfirmEmail('')
+          }}
+          onConfirm={handleDeleteAccount}
+        >
+          <label className="customer-confirm-field">
+            <span>Email address</span>
+            <input
+              type="email"
+              value={deleteConfirmEmail}
+              onChange={(event) => setDeleteConfirmEmail(event.target.value)}
+              placeholder={session?.user?.email || ''}
+              autoComplete="email"
+            />
+          </label>
+        </ConfirmDialog>
+      )}
       <button
         aria-label="Open navigation"
         className="customer-square-button customer-mobile-menu-button st-mobile-menu"
@@ -1045,14 +1155,13 @@ export default function SettingsPage({
           item={selectedItem}
           preset={preset}
           onPresetChange={(v) => {
-            setPreset(v)
-            nudgeSave()
+            applyPreset(v)
           }}
           onAction={onAction}
           onDanger={() => setDangerOpen((v) => !v)}
           dangerOpen={dangerOpen}
-          onSignOutAll={() => onNavigate?.('login')}
-          onDeleteAccount={() => alert('Delete account flow — wireframe only.')}
+          onSignOutAll={handleSignOutAll}
+          onDeleteAccount={() => setDeleteDialogOpen(true)}
           theme={theme}
         />
       </div>

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase.js'
+import Toast from '../components/Toast.jsx'
 
 function tierLabel(tier) {
   if (!tier) return 'Silver'
@@ -580,7 +581,7 @@ function EditDialog({ name, email, phone, location, saving, onClose, onSave }) {
         <header className="mp-dialog-head">
           <div>
             <h2 id="mp-dialog-heading">Edit profile</h2>
-            <p>Wireframe: saves are not persisted to the backend.</p>
+            <p>Update your name, email, phone, and preferred location.</p>
           </div>
           <button
             type="button"
@@ -665,28 +666,32 @@ export default function MyProfilePage({ onOpenSidebar, onNavigate, session }) {
     loyaltyPoints: 0,
     memberSince: null,
   })
+  const [profileLoaded, setProfileLoaded] = useState(false)
   const [savingDialog, setSavingDialog] = useState(false)
+  const [toast, setToast] = useState('')
 
   useEffect(() => {
     if (!userId) return undefined
     let cancelled = false
     supabase
       .from('customers')
-      .select('id, fullname, email, phone, tier, loyalty_points, member_since')
+      .select('id, fullname, email, phone, tier, loyalty_points, member_since, settings')
       .eq('id', userId)
       .single()
       .then(({ data }) => {
         if (cancelled || !data) return
+        const preferredLocation = data.settings?.preferred_location || 'Downtown'
         setProfile({
           id: data.id,
           name: data.fullname || session?.user?.email?.split('@')[0] || '',
           email: data.email || session?.user?.email || '',
           phone: data.phone || '',
-          location: 'Downtown',
+          location: preferredLocation,
           tier: data.tier || 'silver',
           loyaltyPoints: data.loyalty_points || 0,
           memberSince: data.member_since || null,
         })
+        setProfileLoaded(true)
       })
     return () => {
       cancelled = true
@@ -708,6 +713,7 @@ export default function MyProfilePage({ onOpenSidebar, onNavigate, session }) {
     't-tipDefault': true,
   })
   const [dialogOpen, setDialogOpen] = useState(false)
+  const [profileDirty, setProfileDirty] = useState(false)
 
   const setItemSelection = (id) => {
     setSelection((prev) => ({ ...prev, [activeTab]: id }))
@@ -715,7 +721,27 @@ export default function MyProfilePage({ onOpenSidebar, onNavigate, session }) {
 
   const onToggle = (id, value) => {
     setToggles((prev) => ({ ...prev, [id]: value }))
+    setProfileDirty(true)
   }
+
+  useEffect(() => {
+    if (!userId || !profileLoaded || !profileDirty) return undefined
+
+    const timeoutId = window.setTimeout(async () => {
+      const { error } = await supabase.rpc('merge_settings', {
+        patch: {
+          profile_toggles: toggles,
+        },
+      })
+      if (error) {
+        setToast(`Couldn't save preference: ${error.message}`)
+        return
+      }
+      setProfileDirty(false)
+    }, 300)
+
+    return () => window.clearTimeout(timeoutId)
+  }, [userId, profileLoaded, profileDirty, toggles])
 
   const onTabChange = (id) => {
     setActiveTab(id)
@@ -724,24 +750,52 @@ export default function MyProfilePage({ onOpenSidebar, onNavigate, session }) {
   const onSave = async (draft) => {
     if (!userId) return
     setSavingDialog(true)
+    const nextEmail = draft.email.trim()
+    const emailChanged = nextEmail && nextEmail !== profile.email
+
+    if (emailChanged) {
+      const { error: emailError } = await supabase.auth.updateUser({
+        email: nextEmail,
+      })
+      if (emailError) {
+        setSavingDialog(false)
+        setToast(`Couldn't update email: ${emailError.message}`)
+        return
+      }
+    }
+
     const { error } = await supabase
       .from('customers')
       .update({
         fullname: draft.name,
+        email: nextEmail || profile.email,
         phone: draft.phone || null,
       })
       .eq('id', userId)
     setSavingDialog(false)
     if (error) {
-      window.alert(`Couldn't save: ${error.message}`)
+      setToast(`Couldn't save: ${error.message}`)
       return
     }
     setProfile((prev) => ({
       ...prev,
       name: draft.name,
+      email: nextEmail || prev.email,
       phone: draft.phone,
       location: draft.location,
     }))
+    const { error: settingsError } = await supabase.rpc('merge_settings', {
+      patch: {
+        preferred_location: draft.location || 'Downtown',
+      },
+    })
+    if (settingsError) {
+      setToast(`Saved profile, but location sync failed: ${settingsError.message}`)
+    } else if (emailChanged) {
+      setToast('Check your inbox to confirm your new email address.')
+    } else {
+      setToast('Profile updated.')
+    }
     setDialogOpen(false)
   }
 
@@ -814,6 +868,7 @@ export default function MyProfilePage({ onOpenSidebar, onNavigate, session }) {
 
   return (
     <section className="customer-main mp-page" aria-label="My profile">
+      <Toast message={toast} onClose={() => setToast('')} />
       <button
         aria-label="Open navigation"
         className="customer-square-button customer-mobile-menu-button mp-mobile-menu"

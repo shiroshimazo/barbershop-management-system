@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase.js'
+import Toast from '../components/Toast.jsx'
+import { downloadCsv, setBookingDraft } from './customerActions.js'
 
 const chips = [
   { id: 'all', label: 'All' },
@@ -36,6 +38,7 @@ function mapVisit(row) {
     time,
     duration: `${row.duration_minutes || 45} min`,
     barber: row.barber?.fullname || 'Barber',
+    barberId: row.barber_id || row.barber?.id || null,
     location: row.location || '-',
     price: Math.round((row.price_cents || 0) / 100),
     status: 'Completed',
@@ -131,7 +134,7 @@ function Icon({ name }) {
   return <svg {...commonProps}>{paths[name]}</svg>
 }
 
-function VisitCard({ visit, selected, onSelect, onRebook }) {
+function VisitCard({ visit, selected, onSelect, onRebook, onReceipt }) {
   return (
     <article
       className={`hist-visit${selected ? ' is-selected' : ''}`}
@@ -184,19 +187,16 @@ function VisitCard({ visit, selected, onSelect, onRebook }) {
         className="hist-actions"
         onClick={(event) => event.stopPropagation()}
       >
-        <button className="hist-btn hist-btn-primary" type="button">
+        <button className="hist-btn hist-btn-primary" type="button" onClick={() => onReceipt?.(visit)}>
           {selected ? 'Open receipt' : 'Receipt'}
         </button>
         <div className="hist-btn-row">
           <button
             className="hist-btn hist-btn-primary"
             type="button"
-            onClick={onRebook}
+            onClick={() => onRebook?.(visit)}
           >
             Rebook
-          </button>
-          <button className="hist-btn" type="button">
-            Tip again
           </button>
         </div>
       </div>
@@ -204,7 +204,7 @@ function VisitCard({ visit, selected, onSelect, onRebook }) {
   )
 }
 
-function DetailPanel({ visit, onRebook }) {
+function DetailPanel({ visit, onExport, onRebook }) {
   if (!visit) {
     return (
       <aside className="hist-detail" aria-label="Receipt preview">
@@ -250,21 +250,21 @@ function DetailPanel({ visit, onRebook }) {
       </div>
 
       <div className="hist-detail-actions">
-        <button className="hist-btn hist-btn-primary hist-btn-block" type="button">
+        <button className="hist-btn hist-btn-primary hist-btn-block" type="button" onClick={() => onExport?.(visit)}>
           <Icon name="download" />
-          Download PDF
+          Export CSV
         </button>
         <button
           className="hist-btn hist-btn-block hist-btn-light"
           type="button"
-          onClick={onRebook}
+          onClick={() => onRebook?.(visit)}
         >
           Rebook this cut
         </button>
       </div>
 
       <p className="hist-note">
-        Prototype note: line items, tax, and tip history pending data model confirmation.
+        CSV exports are wired; PDF receipt URLs and tip history still need backend fields.
       </p>
     </aside>
   )
@@ -277,6 +277,8 @@ export default function HistoryPage({ onOpenSidebar, onNavigate, session }) {
   const [visits, setVisits] = useState([])
   const [loyaltyPoints, setLoyaltyPoints] = useState(0)
   const [selectedId, setSelectedId] = useState(null)
+  const [visibleCount, setVisibleCount] = useState(20)
+  const [toast, setToast] = useState('')
 
   const userId = session?.user?.id
 
@@ -287,7 +289,7 @@ export default function HistoryPage({ onOpenSidebar, onNavigate, session }) {
       supabase
         .from('visits')
         .select(
-          'id, service, visited_at, location, price_cents, rating, barber:barbers ( id, fullname )',
+          'id, barber_id, service, visited_at, duration_minutes, location, price_cents, rating, barber:barbers ( id, fullname )',
         )
         .eq('customer_id', userId)
         .order('visited_at', { ascending: false }),
@@ -326,10 +328,12 @@ export default function HistoryPage({ onOpenSidebar, onNavigate, session }) {
     })
   }, [visits, query, activeChip, activeTab])
 
+  const visibleVisits = useMemo(() => filtered.slice(0, visibleCount), [filtered, visibleCount])
+
   const grouped = useMemo(() => {
     const groups = []
     let currentKey = null
-    for (const v of filtered) {
+    for (const v of visibleVisits) {
       if (v.monthKey !== currentKey) {
         groups.push({ key: v.monthKey, label: v.monthLabel, items: [] })
         currentKey = v.monthKey
@@ -337,12 +341,41 @@ export default function HistoryPage({ onOpenSidebar, onNavigate, session }) {
       groups[groups.length - 1].items.push(v)
     }
     return groups
-  }, [filtered])
+  }, [visibleVisits])
 
   const effectiveSelectedId =
-    filtered.find((v) => v.id === selectedId)?.id || filtered[0]?.id || null
-  const selected = filtered.find((v) => v.id === effectiveSelectedId) || filtered[0]
-  const goBook = () => onNavigate?.('book')
+    visibleVisits.find((v) => v.id === selectedId)?.id || visibleVisits[0]?.id || null
+  const selected = visibleVisits.find((v) => v.id === effectiveSelectedId) || visibleVisits[0]
+  const goBook = (visit) => {
+    if (visit) {
+      setBookingDraft({
+        barberId: visit.barberId || null,
+        barberName: visit.barber || null,
+        serviceName: visit.service || null,
+      })
+    }
+    onNavigate?.('book')
+  }
+  const exportVisits = (rows, filename) => {
+    downloadCsv(
+      filename,
+      rows.map((visit) => ({
+        Date: visit.isoDate,
+        Service: visit.service,
+        Barber: visit.barber,
+        Location: visit.location,
+        Price: `$${visit.price}`,
+        Rating: visit.rating || '',
+      })),
+    )
+  }
+  const handleExport = (visit) => {
+    if (!visit) return
+    exportVisits([visit], `bladeco-receipt-${visit.isoDate}`)
+  }
+  const handleLoadMore = () => {
+    setVisibleCount((count) => Math.min(count + 20, filtered.length))
+  }
 
   // Live stats
   const yearStart = new Date(new Date().getFullYear(), 0, 1)
@@ -363,6 +396,7 @@ export default function HistoryPage({ onOpenSidebar, onNavigate, session }) {
 
   return (
     <section className="customer-main hist-page" aria-label="History">
+      <Toast message={toast} onClose={() => setToast('')} />
       <button
         aria-label="Open navigation"
         className="customer-square-button customer-mobile-menu-button hist-mobile-menu"
@@ -397,11 +431,17 @@ export default function HistoryPage({ onOpenSidebar, onNavigate, session }) {
           </p>
         </div>
         <div className="hist-head-actions">
-          <button className="hist-btn hist-btn-dark" type="button">
+          <button
+            className="hist-btn hist-btn-dark"
+            type="button"
+            onClick={() =>
+              exportVisits(filtered, `bladeco-history-${new Date().toISOString().slice(0, 10)}`)
+            }
+          >
             <Icon name="download" />
             Export
           </button>
-          <button className="hist-btn hist-btn-primary" type="button" onClick={goBook}>
+          <button className="hist-btn hist-btn-primary" type="button" onClick={() => goBook()}>
             <Icon name="plus" />
             New booking
           </button>
@@ -430,7 +470,10 @@ export default function HistoryPage({ onOpenSidebar, onNavigate, session }) {
             type="button"
             role="tab"
             aria-selected={activeTab === tab.id}
-            onClick={() => setActiveTab(tab.id)}
+            onClick={() => {
+              setActiveTab(tab.id)
+              setVisibleCount(20)
+            }}
           >
             <span>{tab.label}</span>
             {typeof tab.count === 'number' && (
@@ -447,7 +490,10 @@ export default function HistoryPage({ onOpenSidebar, onNavigate, session }) {
               className={`hist-chip${activeChip === chip.id ? ' is-active' : ''}`}
               key={chip.id}
               type="button"
-              onClick={() => setActiveChip(chip.id)}
+              onClick={() => {
+                setActiveChip(chip.id)
+                setVisibleCount(20)
+              }}
             >
               {chip.label}
             </button>
@@ -466,7 +512,10 @@ export default function HistoryPage({ onOpenSidebar, onNavigate, session }) {
             type="search"
             placeholder="Search by service or barber..."
             value={query}
-            onChange={(event) => setQuery(event.target.value)}
+            onChange={(event) => {
+              setQuery(event.target.value)
+              setVisibleCount(20)
+            }}
           />
         </label>
       </div>
@@ -491,6 +540,7 @@ export default function HistoryPage({ onOpenSidebar, onNavigate, session }) {
                       selected={visit.id === effectiveSelectedId}
                       onSelect={setSelectedId}
                       onRebook={goBook}
+                      onReceipt={handleExport}
                     />
                   ))}
                 </div>
@@ -500,16 +550,21 @@ export default function HistoryPage({ onOpenSidebar, onNavigate, session }) {
 
           <footer className="hist-pagination">
             <p>
-              Showing <strong>{filtered.length}</strong> of{' '}
+              Showing <strong>{visibleVisits.length}</strong> of{' '}
               <strong>{visits.length}</strong> visits
             </p>
-            <button className="hist-load-more" type="button">
-              Load more →
+            <button
+              className="hist-load-more"
+              type="button"
+              onClick={handleLoadMore}
+              disabled={visibleCount >= filtered.length}
+            >
+              {visibleCount >= filtered.length ? 'All loaded' : 'Load more →'}
             </button>
           </footer>
         </div>
 
-        <DetailPanel visit={selected} onRebook={goBook} />
+        <DetailPanel visit={selected} onRebook={goBook} onExport={handleExport} />
       </div>
     </section>
   )

@@ -1,52 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase.js'
-
-const services = [
-  {
-    id: 'classic-fade-beard',
-    name: 'Classic Fade + Beard Trim',
-    price: 48,
-    duration: 45,
-    descriptor: 'Most popular',
-    tag: 'Signature',
-  },
-  {
-    id: 'skin-fade',
-    name: 'Skin Fade',
-    price: 40,
-    duration: 40,
-    descriptor: 'Sharp lines',
-  },
-  {
-    id: 'classic-cut',
-    name: 'Classic Cut',
-    price: 35,
-    duration: 30,
-    descriptor: 'Scissor & comb',
-  },
-  {
-    id: 'beard-sculpt',
-    name: 'Beard Sculpt & Hot Towel',
-    price: 32,
-    duration: 30,
-    descriptor: 'Includes oil',
-  },
-  {
-    id: 'full-service',
-    name: 'The Full Service',
-    price: 75,
-    duration: 75,
-    descriptor: 'Cut + beard + treatment',
-    tag: 'Premium',
-  },
-  {
-    id: 'kids-cut',
-    name: "Kid's Cut",
-    price: 22,
-    duration: 25,
-    descriptor: 'Under 12',
-  },
-]
+import Toast from '../components/Toast.jsx'
+import { clearBookingDraft, readBookingDraft } from './customerActions.js'
+import { useServices } from './useServices.js'
 
 const MONTH_NAMES = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -210,7 +166,7 @@ function Stepper({ currentStep }) {
   )
 }
 
-function ServicePanel({ selected, onSelect }) {
+function ServicePanel({ selected, onSelect, services, loading }) {
   return (
     <section className="book-panel" aria-labelledby="book-service-heading">
       <header className="book-panel-head">
@@ -221,27 +177,34 @@ function ServicePanel({ selected, onSelect }) {
         </div>
       </header>
 
-      <div className="book-service-grid">
-        {services.map((svc) => (
-          <button
-            className={`book-service-card${selected === svc.id ? ' is-selected' : ''}`}
-            key={svc.id}
-            type="button"
-            onClick={() => onSelect(svc.id)}
-          >
-            <div className="book-service-top">
-              <strong>{svc.name}</strong>
-              <span className="book-service-price">${svc.price}</span>
-            </div>
-            <p className="book-service-meta">
-              <span><Icon name="clock" />{svc.duration} min</span>
-              <span className="book-service-dot">·</span>
-              <span>{svc.descriptor}</span>
-            </p>
-            {svc.tag && <span className="book-service-tag">{svc.tag}</span>}
-          </button>
-        ))}
-      </div>
+      {loading ? (
+        <p className="book-loading">Loading services...</p>
+      ) : (
+        <div className="book-service-grid">
+          {services.map((svc) => (
+            <button
+              className={`book-service-card${selected === svc.id ? ' is-selected' : ''}`}
+              key={svc.id}
+              type="button"
+              onClick={() => onSelect(svc.id)}
+            >
+              <div className="book-service-top">
+                <strong>{svc.name}</strong>
+                <span className="book-service-price">${svc.price}</span>
+              </div>
+              <p className="book-service-meta">
+                <span>
+                  <Icon name="clock" />
+                  {svc.duration} min
+                </span>
+                <span className="book-service-dot">·</span>
+                <span>{svc.descriptor}</span>
+              </p>
+              {svc.tag && <span className="book-service-tag">{svc.tag}</span>}
+            </button>
+          ))}
+        </div>
+      )}
     </section>
   )
 }
@@ -464,8 +427,7 @@ function SummaryPanel({
   onConfirm,
   submitState,
 }) {
-  const loyaltyDiscount = 5
-  const total = service ? service.price - loyaltyDiscount : 0
+  const total = service ? service.price : 0
 
   return (
     <aside className="book-summary" aria-label="Booking summary">
@@ -513,10 +475,6 @@ function SummaryPanel({
           <span>Service</span>
           <span>{service ? `$${service.price.toFixed(2)}` : '—'}</span>
         </div>
-        <div>
-          <span>Loyalty discount</span>
-          <span className="book-discount">{service ? `–$${loyaltyDiscount.toFixed(2)}` : '—'}</span>
-        </div>
         <div className="book-summary-total">
           <span>Total today</span>
           <span>{service ? `$${total}` : '—'}</span>
@@ -541,9 +499,18 @@ function SummaryPanel({
   )
 }
 
-export default function BookAppointmentPage({ onBack, onOpenSidebar, onNavigate, session }) {
-  const [serviceId, setServiceId] = useState('classic-fade-beard')
-  const [barberId, setBarberId] = useState(null)
+export default function BookAppointmentPage({
+  onBack,
+  onOpenSidebar,
+  onNavigate,
+  onAppointmentsChange,
+  session,
+}) {
+  const { services, loading: servicesLoading } = useServices()
+  const [serviceId, setServiceId] = useState(
+    () => readBookingDraft()?.serviceId || readBookingDraft()?.serviceSlug || readBookingDraft()?.serviceName || 'classic-fade-beard',
+  )
+  const [barberId, setBarberId] = useState(() => readBookingDraft()?.barberId || null)
   const [selectedDay, setSelectedDay] = useState(null)
   const [selectedDate, setSelectedDate] = useState(null)
   const [selectedDateLabel, setSelectedDateLabel] = useState('')
@@ -555,6 +522,7 @@ export default function BookAppointmentPage({ onBack, onOpenSidebar, onNavigate,
   const [takenSlotsData, setTakenSlotsData] = useState(new Set())
   const [takenSlotsKey, setTakenSlotsKey] = useState('')
   const [favoriteIds, setFavoriteIds] = useState(new Set())
+  const [toast, setToast] = useState('')
   const userId = session?.user?.id
 
   const today = useMemo(() => new Date(), [])
@@ -564,6 +532,10 @@ export default function BookAppointmentPage({ onBack, onOpenSidebar, onNavigate,
   })
 
   const [submitState, setSubmitState] = useState({ status: 'idle', message: '' })
+
+  useEffect(() => {
+    clearBookingDraft()
+  }, [])
 
   // Fetch barbers from DB
   useEffect(() => {
@@ -620,7 +592,7 @@ export default function BookAppointmentPage({ onBack, onOpenSidebar, onNavigate,
           next.delete(barberId)
           return next
         })
-        window.alert(`Couldn't save: ${error.message}`)
+        setToast(`Couldn't save favourite: ${error.message}`)
       }
     } else {
       const { error } = await supabase
@@ -634,7 +606,7 @@ export default function BookAppointmentPage({ onBack, onOpenSidebar, onNavigate,
           next.add(barberId)
           return next
         })
-        window.alert(`Couldn't remove: ${error.message}`)
+        setToast(`Couldn't remove favourite: ${error.message}`)
       }
     }
   }
@@ -693,10 +665,15 @@ export default function BookAppointmentPage({ onBack, onOpenSidebar, onNavigate,
     cursor.year > today.getFullYear() ||
     (cursor.year === today.getFullYear() && cursor.month > today.getMonth())
 
-  const service = useMemo(
-    () => services.find((s) => s.id === serviceId) || null,
-    [serviceId],
-  )
+  const service = useMemo(() => {
+    if (services.length === 0) return null
+    const target = String(serviceId || '').toLowerCase()
+    return (
+      services.find(
+        (s) => s.id === serviceId || s.slug === serviceId || s.name.toLowerCase() === target,
+      ) || services[0]
+    )
+  }, [services, serviceId])
   const barber = useMemo(
     () => barbers.find((b) => b.id === barberId) || null,
     [barbers, barberId],
@@ -742,6 +719,7 @@ export default function BookAppointmentPage({ onBack, onOpenSidebar, onNavigate,
       customer_id: session.user.id,
       barber_id: barber.id,
       service: service.name,
+      ...(service.source === 'db' ? { service_id: service.id } : {}),
       scheduled_at: scheduledAt.toISOString(),
       duration_minutes: service.duration,
       location: barber.location || 'Downtown',
@@ -756,6 +734,7 @@ export default function BookAppointmentPage({ onBack, onOpenSidebar, onNavigate,
     }
 
     setSubmitState({ status: 'success', message: '' })
+    onAppointmentsChange?.()
     if (onNavigate) onNavigate('appointments')
   }
 
@@ -767,6 +746,7 @@ export default function BookAppointmentPage({ onBack, onOpenSidebar, onNavigate,
 
   return (
     <section className="customer-main book-page" aria-label="Book appointment">
+      <Toast message={toast} onClose={() => setToast('')} />
       <button
         aria-label="Open navigation"
         className="customer-square-button customer-mobile-menu-button book-mobile-menu"
@@ -805,7 +785,12 @@ export default function BookAppointmentPage({ onBack, onOpenSidebar, onNavigate,
 
       <div className="book-layout">
         <div className="book-form-column">
-          <ServicePanel selected={serviceId} onSelect={setServiceId} />
+          <ServicePanel
+            selected={service?.id || serviceId}
+            onSelect={setServiceId}
+            services={services}
+            loading={servicesLoading}
+          />
           <BarberPanel
             selected={barberId}
             onSelect={setBarberId}

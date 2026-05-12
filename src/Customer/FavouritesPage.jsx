@@ -1,5 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase.js'
+import ConfirmDialog from './ConfirmDialog.jsx'
+import Toast from '../components/Toast.jsx'
+import { setBookingDraft } from './customerActions.js'
+import { useServices } from './useServices.js'
 
 const DEFAULT_SLOTS = ['10:30 AM', '12:00 PM', '3:15 PM']
 
@@ -11,6 +15,15 @@ function initialsFromName(name) {
     .slice(0, 2)
     .map((p) => p[0]?.toUpperCase() || '')
     .join('') || '?'
+}
+
+function hashHue(value) {
+  const text = String(value || '')
+  let hash = 0
+  for (let i = 0; i < text.length; i += 1) {
+    hash = (hash * 31 + text.charCodeAt(i)) % 997
+  }
+  return (hash % 60) - 30
 }
 
 function mapBarber(row, index) {
@@ -30,49 +43,14 @@ function mapBarber(row, index) {
     location: row.location || '',
     rating: Number(row.rating) || 5.0,
     focus: row.specialty || 'Cuts & beards',
-    preferred: '—',
-    next: '—',
+    preferred: row.specialty || 'Cuts & beards',
+    next: row.next_available || DEFAULT_SLOTS[0],
     skills,
     isPrimary: index === 0,
-    hue: ((index * 27) % 60) - 30,
+    hue: hashHue(row.id || fullname),
     slots: DEFAULT_SLOTS,
   }
 }
-
-const services = [
-  {
-    id: 's-classic',
-    name: 'Classic Fade + Beard Trim',
-    price: 48,
-    duration: '45 min',
-    tag: 'Signature',
-    tagVariant: 'gold',
-  },
-  {
-    id: 's-skin',
-    name: 'Skin Fade',
-    price: 40,
-    duration: '40 min',
-    tag: 'Sharp lines',
-    tagVariant: 'soft',
-  },
-  {
-    id: 's-beard',
-    name: 'Beard Sculpt & Hot Towel',
-    price: 32,
-    duration: '30 min',
-    tag: 'Includes oil',
-    tagVariant: 'soft',
-  },
-  {
-    id: 's-full',
-    name: 'The Full Service',
-    price: 75,
-    duration: '75 min',
-    tag: 'Premium',
-    tagVariant: 'gold',
-  },
-]
 
 const chips = [
   { id: 'all', label: 'All' },
@@ -221,12 +199,20 @@ function BarberCard({ barber, selected, onSelect, onBook, onRemove, removing }) 
         <button
           className="fav-btn fav-btn-primary"
           type="button"
-          onClick={onBook}
+          onClick={() => onBook(barber)}
         >
           Book
         </button>
         <div className="fav-btn-row">
-          <button className="fav-btn" type="button">
+          <button
+            className="fav-btn"
+            type="button"
+            onClick={() =>
+              (window.location.href = `mailto:support@bladeco.example?subject=${encodeURIComponent(
+                `Message for ${barber.name}`,
+              )}`)
+            }
+          >
             Message
           </button>
           <button
@@ -270,7 +256,9 @@ function ServiceCard({ service, selected, onSelect, onBook }) {
         {service.tag && (
           <span
             className={`fav-pill ${
-              service.tagVariant === 'gold' ? 'fav-pill-gold' : 'fav-pill-soft'
+              service.tag === 'Premium' || service.tag === 'Signature'
+                ? 'fav-pill-gold'
+                : 'fav-pill-soft'
             }`}
           >
             {service.tag}
@@ -278,7 +266,7 @@ function ServiceCard({ service, selected, onSelect, onBook }) {
         )}
       </div>
       <div className="fav-svc-actions" onClick={(event) => event.stopPropagation()}>
-        <button className="fav-btn fav-btn-primary" type="button" onClick={onBook}>
+        <button className="fav-btn fav-btn-primary" type="button" onClick={() => onBook(service)}>
           Book
         </button>
       </div>
@@ -309,8 +297,8 @@ function DetailPanel({
   const focus = isBarber
     ? barber?.focus
     : service?.tag || 'Saved service'
-  const next = '—'
-  const preferred = isBarber ? barber?.preferred : '—'
+  const next = isBarber && barber ? barber.next || slots[0] : 'Next available'
+  const preferred = isBarber ? barber?.preferred || barber?.focus : service?.name || '—'
 
   return (
     <aside className="fav-detail" aria-label="Favourite detail">
@@ -373,7 +361,7 @@ function DetailPanel({
         <button
           className="fav-btn fav-btn-primary fav-btn-block"
           type="button"
-          onClick={onBook}
+          onClick={() => onBook(isBarber ? barber : service)}
         >
           Book this
         </button>
@@ -398,15 +386,18 @@ function DetailPanel({
 }
 
 export default function FavouritesPage({ onOpenSidebar, onNavigate, session }) {
+  const { services: catalogServices } = useServices()
   const [activeTab, setActiveTab] = useState('barbers')
   const [activeChip, setActiveChip] = useState('all')
   const [query, setQuery] = useState('')
   const [barbers, setBarbers] = useState([])
   const [tier, setTier] = useState('silver')
   const [selectedBarberId, setSelectedBarberId] = useState(null)
-  const [selectedServiceId, setSelectedServiceId] = useState(services[0]?.id || null)
+  const [selectedServiceId, setSelectedServiceId] = useState(null)
   const [selectedSlot, setSelectedSlot] = useState('10:30 AM')
   const [removingId, setRemovingId] = useState(null)
+  const [pendingRemove, setPendingRemove] = useState(null)
+  const [toast, setToast] = useState('')
   const [refreshTick, setRefreshTick] = useState(0)
 
   const userId = session?.user?.id
@@ -440,19 +431,25 @@ export default function FavouritesPage({ onOpenSidebar, onNavigate, session }) {
     }
   }, [userId, refreshTick])
 
-  const handleRemove = async (barberId) => {
-    if (!barberId || !userId) return
-    setRemovingId(barberId)
+  const handleRemoveRequest = (barberId) => {
+    const target = barbers.find((b) => b.id === barberId)
+    setPendingRemove(target || null)
+  }
+
+  const confirmRemove = async () => {
+    if (!pendingRemove?.id || !userId) return
+    setRemovingId(pendingRemove.id)
     const { error } = await supabase
       .from('favorites')
       .delete()
       .eq('customer_id', userId)
-      .eq('barber_id', barberId)
+      .eq('barber_id', pendingRemove.id)
     setRemovingId(null)
     if (error) {
-      window.alert(`Couldn't remove: ${error.message}`)
+      setToast(`Couldn't remove: ${error.message}`)
       return
     }
+    setPendingRemove(null)
     setRefreshTick((t) => t + 1)
   }
 
@@ -474,11 +471,11 @@ export default function FavouritesPage({ onOpenSidebar, onNavigate, session }) {
 
   const visibleServices = useMemo(() => {
     const q = query.trim().toLowerCase()
-    if (!q) return services
-    return services.filter((s) =>
+    if (!q) return catalogServices
+    return catalogServices.filter((s) =>
       `${s.name} ${s.tag || ''}`.toLowerCase().includes(q),
     )
-  }, [query])
+  }, [query, catalogServices])
 
   const effectiveBarberId =
     visibleBarbers.find((b) => b.id === selectedBarberId)?.id ||
@@ -490,7 +487,7 @@ export default function FavouritesPage({ onOpenSidebar, onNavigate, session }) {
     selectedServiceId
 
   const selectedBarber = barbers.find((b) => b.id === effectiveBarberId)
-  const selectedService = services.find((s) => s.id === effectiveServiceId)
+  const selectedService = catalogServices.find((s) => s.id === effectiveServiceId)
 
   const quickService =
     activeTab === 'barbers'
@@ -508,7 +505,21 @@ export default function FavouritesPage({ onOpenSidebar, onNavigate, session }) {
     }
   }
 
-  const goBook = () => onNavigate?.('book')
+  const goBook = (selection) => {
+    if (selection) {
+      const isBarber = Boolean(selection.role || selection.skills)
+      setBookingDraft({
+        barberId: isBarber ? selection.id : selection.barber?.id || selection.barberId || null,
+        barberName: isBarber
+          ? selection.name
+          : selection.barber?.fullname || selection.barberName || null,
+        serviceName: isBarber
+          ? null
+          : selection.serviceName || selection.service?.name || selection.name || null,
+      })
+    }
+    onNavigate?.('book')
+  }
 
   const isBarberView = activeTab === 'barbers'
   const showEmpty = isBarberView
@@ -529,7 +540,7 @@ export default function FavouritesPage({ onOpenSidebar, onNavigate, session }) {
     {
       id: 'services',
       icon: 'funnel',
-      value: services.length,
+      value: catalogServices.length,
       label: 'Services on offer',
     },
     {
@@ -543,6 +554,18 @@ export default function FavouritesPage({ onOpenSidebar, onNavigate, session }) {
 
   return (
     <section className="customer-main fav-page" aria-label="Favourites">
+      <Toast message={toast} onClose={() => setToast('')} />
+      {pendingRemove && (
+        <ConfirmDialog
+          title="Remove this barber from favourites?"
+          description="You can add them back from the Book page anytime."
+          confirmLabel="Yes, remove"
+          cancelLabel="Keep it"
+          busy={removingId === pendingRemove.id}
+          onCancel={() => setPendingRemove(null)}
+          onConfirm={confirmRemove}
+        />
+      )}
       <button
         aria-label="Open navigation"
         className="customer-square-button customer-mobile-menu-button fav-mobile-menu"
@@ -572,8 +595,8 @@ export default function FavouritesPage({ onOpenSidebar, onNavigate, session }) {
             Favourites<span>.</span>
           </h1>
           <p>
-            Your saved barbers and go-to services — ready for a one-tap rebook when you&apos;re
-            in a rush.
+            Your saved barbers and the service catalog — ready for a one-tap rebook when
+            you&apos;re in a rush.
           </p>
         </div>
         <div className="fav-head-actions">
@@ -621,7 +644,7 @@ export default function FavouritesPage({ onOpenSidebar, onNavigate, session }) {
           onClick={() => onTabChange('services')}
         >
           <span>Services</span>
-          <span className="fav-tab-count">{services.length}</span>
+          <span className="fav-tab-count">{catalogServices.length}</span>
         </button>
       </div>
 
@@ -661,12 +684,12 @@ export default function FavouritesPage({ onOpenSidebar, onNavigate, session }) {
         <div className="fav-list-panel">
           <div className="fav-list-head">
             <p className="fav-list-title">
-              {isBarberView ? 'Saved barbers' : 'Saved services'}
+              {isBarberView ? 'Saved barbers' : 'Service catalog'}
             </p>
             <p className="fav-list-hint">
               {isBarberView
                 ? 'Tip: pick one to see details on the right. Search filters the current view only.'
-                : 'Tip: pick a service to use it in the quick-book panel on the right.'}
+                : 'Tip: pick a service to prefill the quick-book panel on the right.'}
             </p>
           </div>
 
@@ -687,7 +710,7 @@ export default function FavouritesPage({ onOpenSidebar, onNavigate, session }) {
                   selected={barber.id === effectiveBarberId}
                   onSelect={setSelectedBarberId}
                   onBook={goBook}
-                  onRemove={handleRemove}
+                  onRemove={handleRemoveRequest}
                   removing={removingId === barber.id}
                 />
               ))}
@@ -716,7 +739,7 @@ export default function FavouritesPage({ onOpenSidebar, onNavigate, session }) {
           onSwap={handleSwap}
           onSlot={setSelectedSlot}
           onBook={goBook}
-          onRemove={handleRemove}
+          onRemove={handleRemoveRequest}
           removing={removingId === selectedBarber?.id}
         />
       </div>

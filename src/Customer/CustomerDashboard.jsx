@@ -1,15 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase.js'
 import { Icon } from './CustomerShell.jsx'
-
-const SERVICE_CATALOG = [
-  { id: 'classic-fade-beard', name: 'Classic Fade + Beard Trim', price: 48, duration: 45 },
-  { id: 'skin-fade', name: 'Skin Fade', price: 40, duration: 40 },
-  { id: 'classic-cut', name: 'Classic Cut', price: 35, duration: 30 },
-  { id: 'beard-sculpt', name: 'Beard Sculpt & Hot Towel', price: 32, duration: 30 },
-  { id: 'full-service', name: 'The Full Service', price: 75, duration: 75 },
-  { id: 'kids-cut', name: "Kid's Cut", price: 22, duration: 25 },
-]
+import ConfirmDialog from './ConfirmDialog.jsx'
+import Toast from '../components/Toast.jsx'
+import { openDirections, setBookingDraft } from './customerActions.js'
+import { useServices } from './useServices.js'
 
 const TIER_THRESHOLD = { silver: 500, gold: 1500, platinum: null }
 const TIER_NEXT = { silver: 'Gold', gold: 'Platinum', platinum: null }
@@ -140,7 +135,7 @@ function tierLabel(tier) {
   return tier[0].toUpperCase() + tier.slice(1)
 }
 
-function SearchBox({ onSelect }) {
+function SearchBox({ onSelect, services = [] }) {
   const [query, setQuery] = useState('')
   const [open, setOpen] = useState(false)
   const [barbersData, setBarbersData] = useState([])
@@ -188,11 +183,11 @@ function SearchBox({ onSelect }) {
 
   const barbers = trimmed.length >= 1 && barbersFor === trimmed ? barbersData : []
   const loading = trimmed.length >= 1 && barbersFor !== trimmed
-  const services = qLower
-    ? SERVICE_CATALOG.filter((s) => s.name.toLowerCase().includes(qLower)).slice(0, 4)
+  const serviceHits = qLower
+    ? services.filter((s) => s.name.toLowerCase().includes(qLower)).slice(0, 4)
     : []
 
-  const hasResults = barbers.length > 0 || services.length > 0
+  const hasResults = barbers.length > 0 || serviceHits.length > 0
   const showDropdown = open && trimmed.length >= 1
 
   const handleSelect = (kind, payload) => {
@@ -208,7 +203,7 @@ function SearchBox({ onSelect }) {
     } else if (event.key === 'Enter') {
       event.preventDefault()
       if (barbers[0]) handleSelect('barber', barbers[0])
-      else if (services[0]) handleSelect('service', services[0])
+      else if (serviceHits[0]) handleSelect('service', serviceHits[0])
     }
   }
 
@@ -267,10 +262,10 @@ function SearchBox({ onSelect }) {
               ))}
             </div>
           )}
-          {services.length > 0 && (
+          {serviceHits.length > 0 && (
             <div className="customer-search-group">
               <p className="customer-search-group-label">Services</p>
-              {services.map((s) => (
+              {serviceHits.map((s) => (
                 <button
                   key={s.id}
                   type="button"
@@ -304,6 +299,7 @@ function TopBar({
   onSearchSelect,
   onOpenNotifications,
   onOpenProfile,
+  services,
   unreadCount = 0,
 }) {
   const greeting = displayName ? `Welcome back, ${displayName}` : 'Welcome back'
@@ -326,7 +322,7 @@ function TopBar({
       </div>
 
       <div className="customer-topbar-actions">
-        <SearchBox onSelect={onSearchSelect} />
+        <SearchBox onSelect={onSearchSelect} services={services} />
         <button
           className={`customer-square-button${unreadCount > 0 ? ' has-dot' : ''}`}
           aria-label={
@@ -350,7 +346,7 @@ function TopBar({
   )
 }
 
-function HeroNextAppointment({ appointment, onBook }) {
+function HeroNextAppointment({ appointment, onBook, onCancel, cancelling }) {
   const countdown = countdownParts(appointment.scheduled_at)
   const titleParts = (appointment.service || '').split('+').map((s) => s.trim())
   const lastPart = titleParts.pop() || appointment.service || 'Cut'
@@ -391,19 +387,28 @@ function HeroNextAppointment({ appointment, onBook }) {
         </div>
 
         <div className="customer-hero-actions">
-          <button className="customer-button customer-button-primary" type="button">
+          <button
+            className="customer-button customer-button-primary"
+            type="button"
+            onClick={() => openDirections(appointment.location)}
+          >
             <HomeIcon name="pin" />
             Get directions
           </button>
           <button
             className="customer-button customer-button-light"
             type="button"
-            onClick={onBook}
+            onClick={() => onBook?.(appointment)}
           >
             Reschedule
           </button>
-          <button className="customer-button customer-button-light" type="button">
-            Cancel
+          <button
+            className="customer-button customer-button-light"
+            type="button"
+            onClick={() => onCancel?.(appointment)}
+            disabled={cancelling}
+          >
+            {cancelling ? 'Cancelling...' : 'Cancel'}
           </button>
         </div>
       </div>
@@ -580,7 +585,7 @@ function FavoriteBarbers({ favorites, onBook, onSeeAll }) {
                   {fav.barber?.rating ?? '-'} ({fav.barber?.review_count ?? 0})
                 </span>
               </div>
-              <button className="customer-book-button" type="button" onClick={onBook}>
+              <button className="customer-book-button" type="button" onClick={() => onBook(fav)}>
                 Book
               </button>
             </article>
@@ -703,13 +708,13 @@ function RecentVisits({ visits, onSeeAll, onBook }) {
                 </small>
               </div>
               <div className="customer-visit-actions">
-                <button className="customer-chip" type="button">
+                <button className="customer-chip" type="button" onClick={onSeeAll}>
                   Receipt
                 </button>
                 <button
                   className="customer-chip customer-chip-gold"
                   type="button"
-                  onClick={onBook}
+                  onClick={() => onBook(visit)}
                 >
                   Rebook
                 </button>
@@ -726,6 +731,7 @@ export default function CustomerDashboard({
   onOpenSidebar,
   onNavigate,
   session,
+  onAppointmentsChange,
   unreadCount = 0,
 }) {
   const [customer, setCustomer] = useState(null)
@@ -734,6 +740,11 @@ export default function CustomerDashboard({
   const [favorites, setFavorites] = useState([])
   const [recentVisits, setRecentVisits] = useState([])
   const [visitsThisYear, setVisitsThisYear] = useState(0)
+  const [toast, setToast] = useState('')
+  const [pendingCancel, setPendingCancel] = useState(null)
+  const [cancellingId, setCancellingId] = useState(null)
+  const [refreshTick, setRefreshTick] = useState(0)
+  const { services } = useServices()
 
   const userId = session?.user?.id
 
@@ -752,7 +763,7 @@ export default function CustomerDashboard({
       supabase
         .from('appointments')
         .select(
-          'id, service, scheduled_at, duration_minutes, location, status, barber:barbers ( id, fullname, initials, specialty, location, rating )',
+          'id, barber_id, service, scheduled_at, duration_minutes, location, status, barber:barbers ( id, fullname, initials, specialty, location, rating )',
         )
         .eq('customer_id', userId)
         .eq('status', 'scheduled')
@@ -762,7 +773,7 @@ export default function CustomerDashboard({
       supabase
         .from('visits')
         .select(
-          'id, service, visited_at, location, price_cents, barber:barbers ( id, fullname )',
+          'id, barber_id, service, visited_at, location, price_cents, barber:barbers ( id, fullname )',
         )
         .eq('customer_id', userId)
         .order('visited_at', { ascending: false })
@@ -778,7 +789,7 @@ export default function CustomerDashboard({
       supabase
         .from('visits')
         .select(
-          'id, service, visited_at, location, price_cents, barber:barbers ( id, fullname )',
+          'id, barber_id, service, visited_at, location, price_cents, barber:barbers ( id, fullname )',
         )
         .eq('customer_id', userId)
         .order('visited_at', { ascending: false })
@@ -803,33 +814,75 @@ export default function CustomerDashboard({
     return () => {
       cancelled = true
     }
-  }, [userId])
+  }, [userId, refreshTick])
 
-  const goBook = () => onNavigate?.('book')
+  const goBook = (selection) => {
+    if (selection) {
+      setBookingDraft({
+        barberId: selection.barberId || selection.barber?.id || null,
+        barberName: selection.barber?.fullname || selection.barber?.name || null,
+        serviceName: selection.service || selection.name || null,
+      })
+    }
+    onNavigate?.('book')
+  }
   const goFavourites = () => onNavigate?.('favourites')
   const goHistory = () => onNavigate?.('history')
 
   const handleQuick = (id) => {
-    if (id === 'book' || id === 'rebook') return goBook()
+    if (id === 'book') return goBook()
+    if (id === 'rebook') return goBook(lastVisit)
     onNavigate?.(id)
   }
 
-  const handleSearchSelect = (kind) => {
-    // Barber or service hit: drop the user into the Book flow.
-    // Pre-fill is a future enhancement; the link is functional now.
-    if (kind === 'barber' || kind === 'service') goBook()
+  const handleSearchSelect = (kind, payload) => {
+    if (kind === 'barber' || kind === 'service') goBook(payload)
   }
 
   const displayName =
     firstName(customer?.fullname) ||
     firstName(session?.user?.user_metadata?.fullname) ||
+    firstName(session?.user?.user_metadata?.full_name) ||
+    firstName(session?.user?.user_metadata?.name) ||
     firstName(session?.user?.email?.split('@')[0])
 
   const todayLabel = formatTodayLong()
   const nextTagline = nextAppointmentTagline(nextAppointment?.scheduled_at)
+  const handleCancelRequest = (appointment) => {
+    setPendingCancel(appointment)
+  }
+  const confirmCancel = async () => {
+    if (!pendingCancel?.id || !userId) return
+    setCancellingId(pendingCancel.id)
+    const { error } = await supabase
+      .from('appointments')
+      .update({ status: 'cancelled' })
+      .eq('id', pendingCancel.id)
+      .eq('customer_id', userId)
+    setCancellingId(null)
+    if (error) {
+      setToast(`Couldn't cancel appointment: ${error.message}`)
+      return
+    }
+    setPendingCancel(null)
+    setRefreshTick((value) => value + 1)
+    onAppointmentsChange?.()
+  }
 
   return (
     <section className="customer-main" aria-label="Customer dashboard">
+      <Toast message={toast} onClose={() => setToast('')} />
+      {pendingCancel && (
+        <ConfirmDialog
+          title="Cancel this appointment?"
+          description="You can rebook from the dashboard after you cancel."
+          confirmLabel="Yes, cancel"
+          cancelLabel="Keep it"
+          busy={cancellingId === pendingCancel.id}
+          onCancel={() => setPendingCancel(null)}
+          onConfirm={confirmCancel}
+        />
+      )}
       <TopBar
         onOpenSidebar={onOpenSidebar}
         displayName={displayName}
@@ -839,9 +892,15 @@ export default function CustomerDashboard({
         onOpenNotifications={() => onNavigate?.('notifications')}
         onOpenProfile={() => onNavigate?.('profile')}
         unreadCount={unreadCount}
+        services={services}
       />
       {nextAppointment ? (
-        <HeroNextAppointment appointment={nextAppointment} onBook={goBook} />
+        <HeroNextAppointment
+          appointment={nextAppointment}
+          onBook={goBook}
+          onCancel={handleCancelRequest}
+          cancelling={cancellingId === nextAppointment.id}
+        />
       ) : (
         <HeroEmpty onBook={goBook} />
       )}

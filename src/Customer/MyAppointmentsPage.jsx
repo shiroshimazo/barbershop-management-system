@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase.js'
+import ConfirmDialog from './ConfirmDialog.jsx'
+import Toast from '../components/Toast.jsx'
+import { downloadCalendarInvite, openDirections, setBookingDraft } from './customerActions.js'
 
 const tabs = [
   { id: 'upcoming', label: 'Upcoming' },
@@ -55,6 +58,7 @@ function mapAppointmentRow(row, kind) {
   return {
     id: row.id,
     rawRow: row,
+    barberId: row.barber_id || row.barber?.id || null,
     dateObj: d,
     monthShort: formatMonthShort(d),
     day: formatDay(d),
@@ -164,14 +168,6 @@ function StatusBadge({ status }) {
       </span>
     )
   }
-  if (status === 'pending') {
-    return (
-      <span className="apt-status apt-status-pending">
-        <span className="apt-dot" aria-hidden="true" />
-        Pending confirmation
-      </span>
-    )
-  }
   if (status === 'completed') {
     return (
       <span className="apt-status apt-status-completed">
@@ -191,7 +187,15 @@ function StatusBadge({ status }) {
   return null
 }
 
-function AppointmentRow({ appt, onBook, onCancel, cancelling }) {
+function AppointmentRow({
+  appt,
+  onBook,
+  onCancel,
+  onOpenDirections,
+  onAddToCalendar,
+  onOpenHistory,
+  cancelling,
+}) {
   const isCompleted = appt.status === 'completed'
 
   return (
@@ -233,7 +237,11 @@ function AppointmentRow({ appt, onBook, onCancel, cancelling }) {
         <span className="apt-price">${appt.price}</span>
         {appt.status === 'confirmed' && (
           <>
-            <button className="apt-btn apt-btn-primary" type="button">
+            <button
+              className="apt-btn apt-btn-primary"
+              type="button"
+              onClick={() => onOpenDirections?.(appt)}
+            >
               <Icon name="pin" />
               Get directions
             </button>
@@ -241,42 +249,44 @@ function AppointmentRow({ appt, onBook, onCancel, cancelling }) {
               <button
                 className="apt-btn apt-btn-light"
                 type="button"
-                onClick={onBook}
+                onClick={() => onAddToCalendar?.(appt)}
+              >
+                Add to calendar
+              </button>
+              <button
+                className="apt-btn apt-btn-light"
+                type="button"
+                onClick={() => onBook?.(appt)}
               >
                 Reschedule
               </button>
-              <button
-                className="apt-btn apt-btn-danger"
-                type="button"
-                onClick={() => onCancel?.(appt)}
-                disabled={cancelling}
-              >
-                {cancelling ? 'Cancelling...' : 'Cancel'}
-              </button>
             </div>
+            <button
+              className="apt-btn apt-btn-danger"
+              type="button"
+              onClick={() => onCancel?.(appt)}
+              disabled={cancelling}
+            >
+              {cancelling ? 'Cancelling...' : 'Cancel'}
+            </button>
           </>
         )}
         {appt.status === 'completed' && (
           <>
-            <button className="apt-btn apt-btn-primary" type="button" onClick={onBook}>
+            <button className="apt-btn apt-btn-primary" type="button" onClick={() => onBook?.(appt)}>
               Rebook
             </button>
-            <div className="apt-btn-row">
-              <button className="apt-btn apt-btn-light" type="button">
-                <Icon name="receipt" />
-                Receipt
-              </button>
-              <button className="apt-btn apt-btn-light" type="button">
-                Tip again
-              </button>
-            </div>
+            <button className="apt-btn apt-btn-light" type="button" onClick={() => onOpenHistory?.()}>
+              <Icon name="receipt" />
+              Receipt
+            </button>
           </>
         )}
         {appt.status === 'cancelled' && (
           <button
             className="apt-btn apt-btn-primary"
             type="button"
-            onClick={onBook}
+            onClick={() => onBook?.(appt)}
           >
             Rebook
           </button>
@@ -286,7 +296,12 @@ function AppointmentRow({ appt, onBook, onCancel, cancelling }) {
   )
 }
 
-export default function MyAppointmentsPage({ onOpenSidebar, onNavigate, session }) {
+export default function MyAppointmentsPage({
+  onOpenSidebar,
+  onNavigate,
+  onAppointmentsChange,
+  session,
+}) {
   const [activeTab, setActiveTab] = useState('upcoming')
   const [activeFilter, setActiveFilter] = useState('all')
   const [query, setQuery] = useState('')
@@ -295,6 +310,8 @@ export default function MyAppointmentsPage({ onOpenSidebar, onNavigate, session 
   const [cancelledRows, setCancelledRows] = useState([])
   const [loyaltyPoints, setLoyaltyPoints] = useState(0)
   const [cancellingId, setCancellingId] = useState(null)
+  const [pendingCancel, setPendingCancel] = useState(null)
+  const [toast, setToast] = useState('')
   const [refreshTick, setRefreshTick] = useState(0)
 
   const userId = session?.user?.id
@@ -304,7 +321,7 @@ export default function MyAppointmentsPage({ onOpenSidebar, onNavigate, session 
     let cancelled = false
     const nowIso = new Date().toISOString()
     const select = `
-      id, service, scheduled_at, duration_minutes, location, price_cents, status, notes,
+      id, barber_id, service, scheduled_at, duration_minutes, location, price_cents, status, notes,
       barber:barbers ( id, fullname, initials, specialty, location )
     `
 
@@ -319,7 +336,7 @@ export default function MyAppointmentsPage({ onOpenSidebar, onNavigate, session 
       supabase
         .from('visits')
         .select(
-          'id, service, visited_at, location, price_cents, rating, barber:barbers ( id, fullname )',
+          'id, barber_id, service, visited_at, location, price_cents, rating, barber:barbers ( id, fullname )',
         )
         .eq('customer_id', userId)
         .order('visited_at', { ascending: false }),
@@ -385,24 +402,56 @@ export default function MyAppointmentsPage({ onOpenSidebar, onNavigate, session 
     [activeTab, pastRows],
   )
 
-  const goBook = () => onNavigate?.('book')
+  const goBook = (appointment) => {
+    if (appointment) {
+      setBookingDraft({
+        barberId: appointment.barberId || appointment.rawRow?.barber_id || null,
+        barberName: appointment.barber || null,
+        serviceName: appointment.service || null,
+      })
+    }
+    onNavigate?.('book')
+  }
 
-  const handleCancel = async (appt) => {
-    if (!appt?.id) return
-    if (!window.confirm('Cancel this appointment? You can rebook from this page.')) return
-    setCancellingId(appt.id)
+  const handleCancelRequest = (appt) => {
+    setPendingCancel(appt)
+  }
+
+  const confirmCancel = async () => {
+    if (!pendingCancel?.id) return
+    setCancellingId(pendingCancel.id)
     const { error } = await supabase
       .from('appointments')
       .update({ status: 'cancelled' })
-      .eq('id', appt.id)
+      .eq('id', pendingCancel.id)
       .eq('customer_id', userId)
     setCancellingId(null)
     if (error) {
-      window.alert(`Couldn't cancel: ${error.message}`)
+      setToast(`Couldn't cancel: ${error.message}`)
       return
     }
+    setPendingCancel(null)
     setRefreshTick((t) => t + 1)
+    onAppointmentsChange?.()
   }
+
+  const handleOpenDirections = (appt) => {
+    openDirections(appt?.location || 'Downtown')
+  }
+
+  const handleAddToCalendar = (appt) => {
+    if (!appt?.scheduled_at) return
+    downloadCalendarInvite({
+      title: appt.service || 'Blade & Co. appointment',
+      description: `${appt.barber || 'Your barber'} at Blade & Co.`,
+      location: appt.location || 'Blade & Co.',
+      startAt: appt.scheduled_at,
+      durationMinutes: appt.duration_minutes || 45,
+      filename: `${appt.service || 'appointment'}-${appt.id}`,
+    })
+  }
+
+  const goHistory = () => onNavigate?.('history')
 
   // Live stats
   const yearStart = new Date(new Date().getFullYear(), 0, 1)
@@ -451,6 +500,18 @@ export default function MyAppointmentsPage({ onOpenSidebar, onNavigate, session 
 
   return (
     <section className="customer-main apt-page" aria-label="My appointments">
+      <Toast message={toast} onClose={() => setToast('')} />
+      {pendingCancel && (
+        <ConfirmDialog
+          title="Cancel this appointment?"
+          description="You can rebook from the same page after cancelling."
+          confirmLabel="Yes, cancel"
+          cancelLabel="Keep it"
+          busy={cancellingId === pendingCancel.id}
+          onCancel={() => setPendingCancel(null)}
+          onConfirm={confirmCancel}
+        />
+      )}
       <button
         aria-label="Open navigation"
         className="customer-square-button customer-mobile-menu-button apt-mobile-menu"
@@ -566,7 +627,10 @@ export default function MyAppointmentsPage({ onOpenSidebar, onNavigate, session 
               appt={appt}
               key={appt.id}
               onBook={goBook}
-              onCancel={handleCancel}
+              onCancel={handleCancelRequest}
+              onOpenDirections={handleOpenDirections}
+              onAddToCalendar={handleAddToCalendar}
+              onOpenHistory={goHistory}
               cancelling={cancellingId === appt.id}
             />
           ))
@@ -578,7 +642,12 @@ export default function MyAppointmentsPage({ onOpenSidebar, onNavigate, session 
           <h2 className="apt-section-heading">Recently completed</h2>
           <div className="apt-list">
             {recentlyCompleted.map((appt) => (
-              <AppointmentRow appt={appt} key={`done-${appt.id}`} onBook={goBook} />
+              <AppointmentRow
+                appt={appt}
+                key={`done-${appt.id}`}
+                onBook={goBook}
+                onOpenHistory={goHistory}
+              />
             ))}
           </div>
         </>

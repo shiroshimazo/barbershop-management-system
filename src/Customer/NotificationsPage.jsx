@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase.js'
+import Toast from '../components/Toast.jsx'
+import { downloadCalendarInvite } from './customerActions.js'
 
 const KIND_LABEL = {
   all: 'All',
@@ -83,6 +85,8 @@ function mapNotification(row) {
     needsAction: !!row.needs_action,
     title: row.title,
     body: row.body || '',
+    createdAt: row.created_at,
+    whenAt: row.when_at,
     timeLabel: formatTimeLabel(row.created_at),
     when: formatWhen(row.when_at) || formatWhen(row.created_at),
     who: row.who || '-',
@@ -296,13 +300,15 @@ function DetailPanel({ notif, onToggleRead, onAction, onHistory }) {
         >
           {notif.actions.secondary}
         </button>
-        <button
-          className="nt-btn nt-btn-dark nt-btn-block"
-          type="button"
-          onClick={() => onAction(notif, 'tertiary')}
-        >
-          {notif.actions.tertiary}
-        </button>
+        {notif.actions.tertiary ? (
+          <button
+            className="nt-btn nt-btn-dark nt-btn-block"
+            type="button"
+            onClick={() => onAction(notif, 'tertiary')}
+          >
+            {notif.actions.tertiary}
+          </button>
+        ) : null}
         <button
           className="nt-btn nt-btn-light nt-btn-block"
           type="button"
@@ -334,7 +340,7 @@ function DetailPanel({ notif, onToggleRead, onAction, onHistory }) {
       </div>
 
       <p className="nt-note">
-        Prototype note: &ldquo;Mark as read&rdquo; updates badges + filters locally (no backend).
+        Notification actions mark the item read and route you to the relevant customer page.
         <button type="button" className="nt-link" onClick={onHistory}>
           Open History
         </button>
@@ -355,6 +361,7 @@ export default function NotificationsPage({
   const [activeChip, setActiveChip] = useState('all')
   const [query, setQuery] = useState('')
   const [selectedId, setSelectedId] = useState(null)
+  const [toast, setToast] = useState('')
 
   useEffect(() => {
     if (!userId) return undefined
@@ -434,9 +441,13 @@ export default function NotificationsPage({
 
   const markAllRead = () => {
     const unreadIds = notifs.filter((n) => n.unread).map((n) => n.id)
-    if (unreadIds.length === 0) return
+    if (unreadIds.length === 0) {
+      setToast('All notifications are already read.')
+      return
+    }
     setNotifs((prev) => prev.map((n) => ({ ...n, unread: false })))
     persistRead(unreadIds, true)
+    setToast('Marked all notifications as read.')
   }
 
   const onTabChange = (id) => {
@@ -445,12 +456,49 @@ export default function NotificationsPage({
     setQuery('')
   }
 
-  const onAction = (notif) => {
-    if (!notif.unread) return
+  const onAction = async (notif, kind) => {
     setNotifs((prev) =>
       prev.map((n) => (n.id === notif.id ? { ...n, unread: false } : n)),
     )
     persistRead([notif.id], true)
+
+    const label = notif.actions?.[kind] || ''
+    const normalized = label.toLowerCase()
+    if (normalized.includes('add to calendar')) {
+      downloadCalendarInvite({
+        title: notif.title,
+        description: notif.body,
+        location: notif.where,
+        startAt: notif.whenAt || notif.createdAt,
+        durationMinutes: 45,
+        filename: notif.title,
+      })
+      return
+    }
+    if (normalized.includes('reschedule') || normalized.includes('rebook')) {
+      onNavigate?.('book')
+      return
+    }
+    if (normalized.includes('view booking')) {
+      onNavigate?.('appointments')
+      return
+    }
+    if (normalized.includes('download pdf')) {
+      onNavigate?.('history')
+      return
+    }
+    if (normalized.includes('open history')) {
+      onNavigate?.('history')
+      return
+    }
+    if (normalized.includes('email me')) {
+      setToast('Email delivery is not wired yet.')
+      return
+    }
+    if (normalized.includes('dismiss')) {
+      setToast('Notification marked as read.')
+      return
+    }
   }
 
   const goBook = () => onNavigate?.('book')
@@ -496,6 +544,7 @@ export default function NotificationsPage({
 
   return (
     <section className="customer-main nt-page" aria-label="Notifications">
+      <Toast message={toast} onClose={() => setToast('')} />
       <button
         aria-label="Open navigation"
         className="customer-square-button customer-mobile-menu-button nt-mobile-menu"

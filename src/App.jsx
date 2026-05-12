@@ -47,6 +47,8 @@ function App() {
   const [userRole, setUserRole] = useState(null)
   const [roleForUserId, setRoleForUserId] = useState(null)
   const [theme, setTheme] = useState(getInitialTheme)
+  const [appointmentsByUser, setAppointmentsByUser] = useState({})
+  const [appointmentsTick, setAppointmentsTick] = useState(0)
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme)
@@ -90,6 +92,9 @@ function App() {
   const [unreadByUser, setUnreadByUser] = useState({})
   const [unreadTick, setUnreadTick] = useState(0)
   const unreadCount = sessionUserId ? unreadByUser[sessionUserId] || 0 : 0
+  const upcomingAppointmentsCount = sessionUserId
+    ? appointmentsByUser[sessionUserId] || 0
+    : 0
 
   useEffect(() => {
     if (!sessionUserId || userRole !== 'customer') return undefined
@@ -108,6 +113,25 @@ function App() {
     }
   }, [sessionUserId, userRole, unreadTick])
 
+  useEffect(() => {
+    if (!sessionUserId || userRole !== 'customer') return undefined
+    let cancelled = false
+    const nowIso = new Date().toISOString()
+    supabase
+      .from('appointments')
+      .select('id', { count: 'exact', head: true })
+      .eq('customer_id', sessionUserId)
+      .eq('status', 'scheduled')
+      .gte('scheduled_at', nowIso)
+      .then(({ count }) => {
+        if (cancelled) return
+        setAppointmentsByUser((prev) => ({ ...prev, [sessionUserId]: count || 0 }))
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [sessionUserId, userRole, appointmentsTick])
+
   const refreshUnread = () => setUnreadTick((t) => t + 1)
 
   useEffect(() => {
@@ -115,18 +139,24 @@ function App() {
     let cancelled = false
     supabase
       .from('customers')
-      .select('role')
+      .select('role, settings')
       .eq('id', sessionUserId)
       .single()
       .then(({ data }) => {
         if (cancelled) return
         setUserRole(data?.role === 'admin' ? 'admin' : 'customer')
         setRoleForUserId(sessionUserId)
+        const savedTheme = data?.settings?.theme
+        if (savedTheme === 'dark' || savedTheme === 'light') {
+          setTheme(savedTheme)
+        }
       })
     return () => {
       cancelled = true
     }
   }, [sessionUserId])
+
+  const refreshAppointments = () => setAppointmentsTick((value) => value + 1)
 
   const navigate = (target) => {
     window.location.hash = target
@@ -157,6 +187,7 @@ function App() {
     return (
       <CustomerShell
         activeNav={activeNav}
+        appointmentsCount={upcomingAppointmentsCount}
         onNavigate={navigate}
         onLogout={handleLogout}
         unreadCount={unreadCount}
@@ -167,6 +198,7 @@ function App() {
               <BookAppointmentPage
                 onOpenSidebar={onOpenSidebar}
                 onBack={() => navigate('dashboard')}
+                onAppointmentsChange={refreshAppointments}
                 onNavigate={navigate}
                 session={session}
               />
@@ -176,6 +208,7 @@ function App() {
             return (
               <MyAppointmentsPage
                 onOpenSidebar={onOpenSidebar}
+                onAppointmentsChange={refreshAppointments}
                 onNavigate={navigate}
                 session={session}
               />
@@ -232,6 +265,7 @@ function App() {
           return (
             <CustomerDashboard
               onOpenSidebar={onOpenSidebar}
+              onAppointmentsChange={refreshAppointments}
               onNavigate={navigate}
               session={session}
               unreadCount={unreadCount}

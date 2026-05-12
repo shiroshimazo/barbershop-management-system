@@ -1,9 +1,10 @@
 import { useState } from 'react'
+import ConfirmDialog from './ConfirmDialog.jsx'
 
 const navItems = [
   { id: 'dashboard', icon: 'home', label: 'Home' },
   { id: 'book', icon: 'calendar-plus', label: 'Book appointment' },
-  { id: 'appointments', icon: 'calendar', label: 'My appointments', badge: 2 },
+  { id: 'appointments', icon: 'calendar', label: 'My appointments' },
   { id: 'history', icon: 'history', label: 'History' },
   { id: 'favourites', icon: 'star', label: 'Favourites' },
 ]
@@ -130,8 +131,15 @@ function CustomerSidebar({
   onClose,
   onNavigate,
   onLogoutRequest,
+  appointmentsCount = 0,
   unreadCount = 0,
 }) {
+  const navWithBadge =
+    appointmentsCount > 0
+      ? navItems.map((item) =>
+          item.id === 'appointments' ? { ...item, badge: appointmentsCount } : item,
+        )
+      : navItems
   const decoratedAccountItems = accountItems.map((item) =>
     item.id === 'notifications' && unreadCount > 0
       ? { ...item, badge: unreadCount }
@@ -155,7 +163,7 @@ function CustomerSidebar({
         </button>
       </div>
 
-      <SidebarSection items={navItems} activeId={activeId} onNavigate={onNavigate} />
+      <SidebarSection items={navWithBadge} activeId={activeId} onNavigate={onNavigate} />
       <SidebarSection
         label="Account"
         items={decoratedAccountItems}
@@ -180,42 +188,11 @@ function CustomerSidebar({
   )
 }
 
-function LogoutDialog({ onCancel, onConfirm }) {
-  return (
-    <div className="customer-modal-backdrop" role="presentation">
-      <section
-        aria-labelledby="logout-dialog-heading"
-        aria-modal="true"
-        className="customer-logout-modal"
-        role="dialog"
-      >
-        <h2 id="logout-dialog-heading">Are you sure want to log out?</h2>
-        <p>You will return to the sign in page.</p>
-        <div className="customer-modal-actions">
-          <button
-            className="customer-button customer-button-cancel"
-            type="button"
-            onClick={onCancel}
-          >
-            No
-          </button>
-          <button
-            className="customer-button customer-button-primary"
-            type="button"
-            onClick={onConfirm}
-          >
-            Yes, log out
-          </button>
-        </div>
-      </section>
-    </div>
-  )
-}
-
 export default function CustomerShell({
   activeNav,
   onNavigate,
   onLogout,
+  appointmentsCount = 0,
   unreadCount = 0,
   children,
 }) {
@@ -245,6 +222,7 @@ export default function CustomerShell({
         onClose={() => setIsSidebarOpen(false)}
         onNavigate={handleNavigate}
         onLogoutRequest={openLogoutDialog}
+        appointmentsCount={appointmentsCount}
         unreadCount={unreadCount}
       />
       <button
@@ -257,7 +235,11 @@ export default function CustomerShell({
         ? children({ onOpenSidebar: () => setIsSidebarOpen(true) })
         : children}
       {isLogoutDialogOpen && (
-        <LogoutDialog
+        <ConfirmDialog
+          title="Log out of Blade & Co.?"
+          description="You will return to the sign-in page."
+          cancelLabel="Stay signed in"
+          confirmLabel="Yes, log out"
           onCancel={() => setIsLogoutDialogOpen(false)}
           onConfirm={confirmLogout}
         />

@@ -1575,6 +1575,10 @@
   color: var(--ink);
 }
 
+.customer-confirm-modal {
+  width: min(100%, 440px);
+}
+
 .customer-logout-modal h2 {
   margin: 0;
   font-family: 'Archivo Black', Impact, sans-serif;
@@ -1593,6 +1597,36 @@
   display: flex;
   justify-content: flex-end;
   gap: 10px;
+}
+
+.customer-confirm-field {
+  display: grid;
+  gap: 6px;
+  margin: 0 0 18px;
+  color: var(--muted-2);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.customer-confirm-field span {
+  color: var(--ink);
+}
+
+.customer-confirm-field input {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+}
+
+.customer-confirm-field input:focus {
+  border-color: var(--accent);
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 20%, transparent);
 }
 
 .customer-button-cancel {
@@ -6940,6 +6974,7 @@
 [data-theme='dark'] .customer-sidebar,
 [data-theme='dark'] .customer-modal-backdrop,
 [data-theme='dark'] .customer-logout-modal,
+[data-theme='dark'] .customer-confirm-modal,
 [data-theme='dark'] .mp-dialog-backdrop,
 [data-theme='dark'] .mp-dialog,
 [data-theme='dark'] .hist-detail,
@@ -6959,7 +6994,8 @@
 
 /* Detail panel inside dark sections: restore their light text for the dialog body */
 [data-theme='dark'] .mp-dialog,
-[data-theme='dark'] .customer-logout-modal {
+[data-theme='dark'] .customer-logout-modal,
+[data-theme='dark'] .customer-confirm-modal {
   background: var(--card);
 }
 
@@ -7320,5 +7356,3 @@
   color: var(--accent-deep);
   flex: 0 0 auto;
 }
-
-
