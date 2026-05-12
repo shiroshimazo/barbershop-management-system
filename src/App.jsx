@@ -181,6 +181,7 @@ function App() {
               <MyProfilePage
                 onOpenSidebar={onOpenSidebar}
                 onNavigate={navigate}
+                session={session}
               />
             )
           }
@@ -199,6 +200,7 @@ function App() {
                 onNavigate={navigate}
                 theme={theme}
                 onThemeChange={setTheme}
+                session={session}
               />
             )
           }

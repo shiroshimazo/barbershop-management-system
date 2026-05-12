@@ -1,4 +1,21 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { supabase } from '../lib/supabase.js'
+
+const DEFAULT_TOGGLES = {
+  't-region': true,
+  't-quick': true,
+  't-reminders': true,
+  't-pdf': true,
+  't-quiet': true,
+  't-mkt': false,
+  't-analytics': true,
+  't-alerts': true,
+  't-card': true,
+  't-tip': true,
+  't-export': true,
+  't-diag': true,
+  't-auto': false,
+}
 
 const stats = [
   { id: 'tier', icon: 'star', value: 'Gold', label: 'Member tier', variant: 'gold' },
@@ -735,7 +752,14 @@ function DetailPanel({
   )
 }
 
-export default function SettingsPage({ onOpenSidebar, onNavigate, theme, onThemeChange }) {
+export default function SettingsPage({
+  onOpenSidebar,
+  onNavigate,
+  theme,
+  onThemeChange,
+  session,
+}) {
+  const userId = session?.user?.id
   const [activeTab, setActiveTab] = useState('general')
   const [activeChip, setActiveChip] = useState('all')
   const [query, setQuery] = useState('')
@@ -746,25 +770,33 @@ export default function SettingsPage({ onOpenSidebar, onNavigate, theme, onTheme
     billing: 'card',
     help: 'support',
   })
-  const [toggles, setToggles] = useState({
-    't-region': true,
-    't-quick': true,
-    't-reminders': true,
-    't-pdf': true,
-    't-quiet': true,
-    't-mkt': false,
-    't-analytics': true,
-    't-alerts': true,
-    't-card': true,
-    't-tip': true,
-    't-export': true,
-    't-diag': true,
-    't-auto': false,
-  })
+  const [toggles, setToggles] = useState(DEFAULT_TOGGLES)
   const [preset, setPreset] = useState('Standard')
   const [dangerOpen, setDangerOpen] = useState(false)
   const [saveLabel, setSaveLabel] = useState('Save changes')
   const [dirty, setDirty] = useState(false)
+
+  // Hydrate from customers.settings on mount
+  useEffect(() => {
+    if (!userId) return undefined
+    let cancelled = false
+    supabase
+      .from('customers')
+      .select('settings')
+      .eq('id', userId)
+      .single()
+      .then(({ data }) => {
+        if (cancelled || !data?.settings) return
+        const s = data.settings || {}
+        if (s.toggles && typeof s.toggles === 'object') {
+          setToggles({ ...DEFAULT_TOGGLES, ...s.toggles })
+        }
+        if (typeof s.preset === 'string') setPreset(s.preset)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [userId])
 
   const items = itemsByTab[activeTab]
   const selectedId = selection[activeTab]
@@ -831,7 +863,20 @@ export default function SettingsPage({ onOpenSidebar, onNavigate, theme, onTheme
     nudgeSave()
   }
 
-  const handleSave = () => {
+  const handleSave = async () => {
+    if (!userId) return
+    setSaveLabel('Saving...')
+    const { error } = await supabase
+      .from('customers')
+      .update({
+        settings: { toggles, preset, theme },
+      })
+      .eq('id', userId)
+    if (error) {
+      setSaveLabel('Save failed')
+      setTimeout(() => setSaveLabel('Save changes'), 1500)
+      return
+    }
     setSaveLabel('Saved')
     setDirty(false)
     setTimeout(() => setSaveLabel('Save changes'), 900)

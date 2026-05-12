@@ -1,17 +1,27 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { supabase } from '../lib/supabase.js'
+
+function tierLabel(tier) {
+  if (!tier) return 'Silver'
+  return tier[0].toUpperCase() + tier.slice(1)
+}
+
+function memberIdFrom(uuid) {
+  if (!uuid) return '-'
+  const clean = uuid.replace(/-/g, '').toUpperCase()
+  return `BLC-${clean.slice(0, 4)}-${clean.slice(4, 7)}`
+}
+
+function formatMemberSince(iso) {
+  if (!iso) return '-'
+  return new Date(iso).getFullYear().toString()
+}
 
 const tabs = [
   { id: 'overview', label: 'Overview' },
   { id: 'preferences', label: 'Preferences' },
   { id: 'security', label: 'Security' },
   { id: 'billing', label: 'Billing' },
-]
-
-const stats = [
-  { id: 'tier', icon: 'user', value: 'Gold', label: 'Member tier', variant: 'gold' },
-  { id: 'points', icon: 'star', value: '1,240', label: 'Loyalty points' },
-  { id: 'slot', icon: 'clock', value: '10:30', label: 'Next slot saved' },
-  { id: 'sessions', icon: 'sessions', value: '2', label: 'Active sessions' },
 ]
 
 const kvFields = [
@@ -454,7 +464,20 @@ function KvTile({ field, selected, onSelect }) {
   )
 }
 
-function ProfileHero({ name, location, selected, onSelect, onRebook, onReceipts }) {
+function ProfileHero({
+  name,
+  location,
+  tier,
+  selected,
+  onSelect,
+  onRebook,
+  onReceipts,
+}) {
+  const initials = (name || '?')
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((p) => p[0]?.toUpperCase() || '')
+    .join('') || '?'
   return (
     <article
       className={`mp-hero${selected ? ' is-selected' : ''}`}
@@ -471,16 +494,14 @@ function ProfileHero({ name, location, selected, onSelect, onRebook, onReceipts 
     >
       <span className="mp-hero-avatar" aria-hidden="true">
         <span className="mp-hero-avatar-ring" />
-        <span className="mp-hero-avatar-init">MR</span>
+        <span className="mp-hero-avatar-init">{initials}</span>
       </span>
       <div className="mp-hero-main">
-        <strong>{name}</strong>
+        <strong>{name || '-'}</strong>
         <p>
-          <span>Member · Gold</span>
+          <span>Member · {tier || 'Silver'}</span>
           <span aria-hidden="true">·</span>
           <span>{location}</span>
-          <span aria-hidden="true">·</span>
-          <span>Prefers fades + beard</span>
         </p>
       </div>
       <div className="mp-hero-cta" onClick={(event) => event.stopPropagation()}>
@@ -542,7 +563,7 @@ function DetailPanel({ tab, detail, primaryLabel, onHistory }) {
   )
 }
 
-function EditDialog({ name, email, phone, location, onClose, onSave }) {
+function EditDialog({ name, email, phone, location, saving, onClose, onSave }) {
   const [draft, setDraft] = useState({ name, email, phone, location })
 
   const setField = (key, value) => setDraft((d) => ({ ...d, [key]: value }))
@@ -609,15 +630,21 @@ function EditDialog({ name, email, phone, location, onClose, onSave }) {
         </div>
 
         <footer className="mp-dialog-foot">
-          <button className="mp-btn mp-btn-light" type="button" onClick={onClose}>
+          <button
+            className="mp-btn mp-btn-light"
+            type="button"
+            onClick={onClose}
+            disabled={saving}
+          >
             Cancel
           </button>
           <button
             className="mp-btn mp-btn-primary"
             type="button"
             onClick={() => onSave(draft)}
+            disabled={saving}
           >
-            Save changes
+            {saving ? 'Saving...' : 'Save changes'}
           </button>
         </footer>
       </section>
@@ -625,14 +652,46 @@ function EditDialog({ name, email, phone, location, onClose, onSave }) {
   )
 }
 
-export default function MyProfilePage({ onOpenSidebar, onNavigate }) {
+export default function MyProfilePage({ onOpenSidebar, onNavigate, session }) {
+  const userId = session?.user?.id
   const [activeTab, setActiveTab] = useState('overview')
   const [profile, setProfile] = useState({
-    name: 'Marcus R.',
-    email: 'marcus.r@example.com',
-    phone: '+1 (415) 555-0148',
+    id: '',
+    name: '',
+    email: session?.user?.email || '',
+    phone: '',
     location: 'Downtown',
+    tier: 'silver',
+    loyaltyPoints: 0,
+    memberSince: null,
   })
+  const [savingDialog, setSavingDialog] = useState(false)
+
+  useEffect(() => {
+    if (!userId) return undefined
+    let cancelled = false
+    supabase
+      .from('customers')
+      .select('id, fullname, email, phone, tier, loyalty_points, member_since')
+      .eq('id', userId)
+      .single()
+      .then(({ data }) => {
+        if (cancelled || !data) return
+        setProfile({
+          id: data.id,
+          name: data.fullname || session?.user?.email?.split('@')[0] || '',
+          email: data.email || session?.user?.email || '',
+          phone: data.phone || '',
+          location: 'Downtown',
+          tier: data.tier || 'silver',
+          loyaltyPoints: data.loyalty_points || 0,
+          memberSince: data.member_since || null,
+        })
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [userId, session?.user?.email])
   const [selection, setSelection] = useState({
     overview: 'kv-email',
     preferences: 'pref-loc',
@@ -662,8 +721,27 @@ export default function MyProfilePage({ onOpenSidebar, onNavigate }) {
     setActiveTab(id)
   }
 
-  const onSave = (draft) => {
-    setProfile(draft)
+  const onSave = async (draft) => {
+    if (!userId) return
+    setSavingDialog(true)
+    const { error } = await supabase
+      .from('customers')
+      .update({
+        fullname: draft.name,
+        phone: draft.phone || null,
+      })
+      .eq('id', userId)
+    setSavingDialog(false)
+    if (error) {
+      window.alert(`Couldn't save: ${error.message}`)
+      return
+    }
+    setProfile((prev) => ({
+      ...prev,
+      name: draft.name,
+      phone: draft.phone,
+      location: draft.location,
+    }))
     setDialogOpen(false)
   }
 
@@ -710,6 +788,29 @@ export default function MyProfilePage({ onOpenSidebar, onNavigate }) {
     security: 'Security',
     billing: 'Billing',
   }[activeTab]
+
+  const liveStats = [
+    {
+      id: 'tier',
+      icon: 'user',
+      value: tierLabel(profile.tier),
+      label: 'Member tier',
+      variant: 'gold',
+    },
+    {
+      id: 'points',
+      icon: 'star',
+      value: profile.loyaltyPoints.toLocaleString(),
+      label: 'Loyalty points',
+    },
+    {
+      id: 'since',
+      icon: 'clock',
+      value: formatMemberSince(profile.memberSince),
+      label: 'Member since',
+    },
+    { id: 'sessions', icon: 'sessions', value: '1', label: 'Active sessions' },
+  ]
 
   return (
     <section className="customer-main mp-page" aria-label="My profile">
@@ -763,7 +864,7 @@ export default function MyProfilePage({ onOpenSidebar, onNavigate }) {
       </header>
 
       <div className="mp-stats">
-        {stats.map((stat) => (
+        {liveStats.map((stat) => (
           <article className="mp-stat" key={stat.id}>
             <span className={`mp-stat-icon${stat.variant === 'gold' ? ' is-gold' : ''}`}>
               <Icon name={stat.icon} />
@@ -803,6 +904,7 @@ export default function MyProfilePage({ onOpenSidebar, onNavigate }) {
               <ProfileHero
                 name={profile.name}
                 location={profile.location}
+                tier={tierLabel(profile.tier)}
                 selected={selectedId === 'hero'}
                 onSelect={setItemSelection}
                 onRebook={goBook}
@@ -814,12 +916,14 @@ export default function MyProfilePage({ onOpenSidebar, onNavigate }) {
                 {kvFields.map((field) => {
                   const fieldValue =
                     field.id === 'kv-name'
-                      ? profile.name
+                      ? profile.name || '-'
                       : field.id === 'kv-email'
-                        ? profile.email
+                        ? profile.email || '-'
                         : field.id === 'kv-phone'
-                          ? profile.phone
-                          : field.value
+                          ? profile.phone || '-'
+                          : field.id === 'kv-id'
+                            ? memberIdFrom(profile.id)
+                            : field.value
                   return (
                     <KvTile
                       key={field.id}
@@ -907,6 +1011,7 @@ export default function MyProfilePage({ onOpenSidebar, onNavigate }) {
           email={profile.email}
           phone={profile.phone}
           location={profile.location}
+          saving={savingDialog}
           onClose={() => setDialogOpen(false)}
           onSave={onSave}
         />
