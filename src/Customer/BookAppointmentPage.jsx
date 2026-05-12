@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { supabase } from '../lib/supabase.js'
 
 const services = [
   {
@@ -47,41 +48,76 @@ const services = [
   },
 ]
 
-const barbers = [
-  {
-    id: 'any',
-    name: 'Any available',
-    initials: '?',
-    role: 'Fastest booking',
-    location: '',
-    rating: 'First open',
-    isWildcard: true,
-  },
-  {
-    id: 'jordan',
-    name: 'Jordan Tate',
-    initials: 'JT',
-    role: 'Senior cuts',
-    location: 'Downtown',
-    rating: '5.0',
-  },
-  {
-    id: 'sami',
-    name: 'Sami Kade',
-    initials: 'SK',
-    role: 'Beard sculpting',
-    location: 'Eastside',
-    rating: '4.8',
-  },
-  {
-    id: 'rey',
-    name: 'Rey Vargas',
-    initials: 'RV',
-    role: 'Designs & skin fades',
-    location: 'Downtown',
-    rating: '4.9',
-  },
+const MONTH_NAMES = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
 ]
+const WEEKDAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+
+function buildCalendar(year, month, today = new Date()) {
+  // month is 0-indexed. Returns 6 weeks (42 cells) of { day, muted, disabled, today, dateLabel }.
+  const firstOfMonth = new Date(year, month, 1)
+  const startWeekday = firstOfMonth.getDay()
+  const daysInMonth = new Date(year, month + 1, 0).getDate()
+  const prevMonthDays = new Date(year, month, 0).getDate()
+
+  const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate())
+  const rows = []
+  let row = []
+  let dayCounter = 1
+  let nextMonthCounter = 1
+
+  for (let i = 0; i < 42; i++) {
+    let cell
+    if (i < startWeekday) {
+      cell = { day: prevMonthDays - startWeekday + i + 1, muted: true }
+    } else if (dayCounter > daysInMonth) {
+      cell = { day: nextMonthCounter++, muted: true }
+    } else {
+      const d = new Date(year, month, dayCounter)
+      const isToday = d.getTime() === startOfToday.getTime()
+      const isPast = d < startOfToday
+      cell = {
+        day: dayCounter,
+        date: d,
+        today: isToday,
+        disabled: isPast,
+        dateLabel: `${WEEKDAY_SHORT[d.getDay()]}, ${MONTH_NAMES[month].slice(0, 3)} ${dayCounter}`,
+      }
+      dayCounter++
+    }
+    row.push(cell)
+    if (row.length === 7) {
+      rows.push(row)
+      row = []
+    }
+  }
+  return rows
+}
+
+function monthLabelOf(year, month) {
+  return `${MONTH_NAMES[month]} ${year}`
+}
+
+function parseTimeSlot(slot) {
+  // "2:30 PM" -> { hour: 14, minute: 30 }
+  const match = slot.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i)
+  if (!match) return { hour: 9, minute: 0 }
+  let hour = parseInt(match[1], 10)
+  const minute = parseInt(match[2], 10)
+  const ampm = match[3].toUpperCase()
+  if (ampm === 'PM' && hour !== 12) hour += 12
+  if (ampm === 'AM' && hour === 12) hour = 0
+  return { hour, minute }
+}
+
+function buildScheduledAt(date, slot) {
+  if (!date) return null
+  const { hour, minute } = parseTimeSlot(slot)
+  const d = new Date(date)
+  d.setHours(hour, minute, 0, 0)
+  return d
+}
 
 const timeGroups = [
   {
@@ -106,64 +142,6 @@ const timeGroups = [
 ]
 
 const dayLabels = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
-
-const monthLabel = 'May 2026'
-const calendarRows = [
-  [
-    { day: 26, muted: true },
-    { day: 27, muted: true },
-    { day: 28, muted: true },
-    { day: 29, muted: true },
-    { day: 30, muted: true },
-    { day: 1 },
-    { day: 2 },
-  ],
-  [
-    { day: 3, disabled: true },
-    { day: 4, disabled: true },
-    { day: 5, disabled: true },
-    { day: 6, disabled: true },
-    { day: 7, disabled: true },
-    { day: 8, today: true },
-    { day: 9 },
-  ],
-  [
-    { day: 10 },
-    { day: 11, dateLabel: 'Mon, May 11' },
-    { day: 12 },
-    { day: 13 },
-    { day: 14 },
-    { day: 15 },
-    { day: 16 },
-  ],
-  [
-    { day: 17 },
-    { day: 18 },
-    { day: 19 },
-    { day: 20 },
-    { day: 21 },
-    { day: 22 },
-    { day: 23 },
-  ],
-  [
-    { day: 24 },
-    { day: 25 },
-    { day: 26 },
-    { day: 27 },
-    { day: 28 },
-    { day: 29 },
-    { day: 30 },
-  ],
-  [
-    { day: 31 },
-    { day: 1, muted: true },
-    { day: 2, muted: true },
-    { day: 3, muted: true },
-    { day: 4, muted: true },
-    { day: 5, muted: true },
-    { day: 6, muted: true },
-  ],
-]
 
 function Icon({ name }) {
   const commonProps = {
@@ -268,40 +246,42 @@ function ServicePanel({ selected, onSelect }) {
   )
 }
 
-function BarberPanel({ selected, onSelect }) {
+function BarberPanel({ selected, onSelect, barbers, loading }) {
   return (
     <section className="book-panel" aria-labelledby="book-barber-heading">
       <header className="book-panel-head">
         <span className="book-panel-num">2</span>
         <div>
           <h2 id="book-barber-heading">Pick your barber</h2>
-          <p>Or let us assign the first available — it's faster.</p>
+          <p>Pick a specific barber to lock in their schedule.</p>
         </div>
       </header>
 
-      <div className="book-barber-grid">
-        {barbers.map((barber) => (
-          <button
-            className={`book-barber-card${selected === barber.id ? ' is-selected' : ''}${
-              barber.isWildcard ? ' is-wildcard' : ''
-            }`}
-            key={barber.id}
-            type="button"
-            onClick={() => onSelect(barber.id)}
-          >
-            <span className="book-barber-radio" aria-hidden="true" />
-            <span className="book-barber-avatar">{barber.initials}</span>
-            <strong>{barber.name}</strong>
-            <small>
-              {barber.role}
-              {barber.location && ` · ${barber.location}`}
-            </small>
-            <span className="book-barber-rating">
-              {barber.isWildcard ? barber.rating : <>★ {barber.rating}</>}
-            </span>
-          </button>
-        ))}
-      </div>
+      {loading ? (
+        <p className="book-loading">Loading barbers...</p>
+      ) : barbers.length === 0 ? (
+        <p className="book-loading">No barbers available right now.</p>
+      ) : (
+        <div className="book-barber-grid">
+          {barbers.map((barber) => (
+            <button
+              className={`book-barber-card${selected === barber.id ? ' is-selected' : ''}`}
+              key={barber.id}
+              type="button"
+              onClick={() => onSelect(barber.id)}
+            >
+              <span className="book-barber-radio" aria-hidden="true" />
+              <span className="book-barber-avatar">{barber.initials}</span>
+              <strong>{barber.fullname}</strong>
+              <small>
+                {barber.specialty}
+                {barber.location && ` · ${barber.location}`}
+              </small>
+              <span className="book-barber-rating">★ {barber.rating}</span>
+            </button>
+          ))}
+        </div>
+      )}
     </section>
   )
 }
@@ -312,6 +292,12 @@ function WhenPanel({
   selectedTime,
   onSelectDay,
   onSelectTime,
+  monthLabel,
+  calendarRows,
+  onPrevMonth,
+  onNextMonth,
+  canGoBack,
+  takenSlots,
 }) {
   return (
     <section className="book-panel" aria-labelledby="book-when-heading">
@@ -320,9 +306,9 @@ function WhenPanel({
         <div>
           <h2 id="book-when-heading">When works for you?</h2>
           <p>
-            {selectedBarberName === 'Any available'
-              ? "Times below are based on the shop's open chairs."
-              : `Times below are based on ${selectedBarberName.split(' ')[0]}'s schedule.`}
+            {selectedBarberName
+              ? `Times below are based on ${selectedBarberName.split(' ')[0]}'s schedule.`
+              : 'Pick a barber to see available times.'}
           </p>
         </div>
       </header>
@@ -330,11 +316,22 @@ function WhenPanel({
       <div className="book-when-grid">
         <div className="book-calendar" aria-label="Calendar">
           <div className="book-calendar-head">
-            <button className="book-calendar-nav" type="button" aria-label="Previous month">
+            <button
+              className="book-calendar-nav"
+              type="button"
+              aria-label="Previous month"
+              onClick={onPrevMonth}
+              disabled={!canGoBack}
+            >
               <Icon name="chevronLeft" />
             </button>
             <strong>{monthLabel}</strong>
-            <button className="book-calendar-nav" type="button" aria-label="Next month">
+            <button
+              className="book-calendar-nav"
+              type="button"
+              aria-label="Next month"
+              onClick={onNextMonth}
+            >
               <Icon name="chevronRight" />
             </button>
           </div>
@@ -363,7 +360,7 @@ function WhenPanel({
                   className={className}
                   disabled={cell.muted || cell.disabled}
                   onClick={() =>
-                    !cell.muted && !cell.disabled && onSelectDay(cell.day, cell.dateLabel)
+                    !cell.muted && !cell.disabled && onSelectDay(cell.day, cell.dateLabel, cell.date)
                   }
                 >
                   {cell.day}
@@ -380,7 +377,9 @@ function WhenPanel({
               <div className="book-time-grid">
                 {group.slots.map((slot) => {
                   const time = typeof slot === 'string' ? slot : slot.time
-                  const disabled = typeof slot === 'object' && slot.disabled
+                  const presetDisabled = typeof slot === 'object' && slot.disabled
+                  const taken = takenSlots?.has(time)
+                  const disabled = presetDisabled || taken
                   const isSelected = time === selectedTime
                   return (
                     <button
@@ -391,6 +390,7 @@ function WhenPanel({
                       type="button"
                       disabled={disabled}
                       onClick={() => onSelectTime(time)}
+                      title={taken ? 'Already booked' : undefined}
                     >
                       {time}
                     </button>
@@ -433,6 +433,7 @@ function SummaryPanel({
   selectedTime,
   isReady,
   onConfirm,
+  submitState,
 }) {
   const loyaltyDiscount = 5
   const total = service ? service.price - loyaltyDiscount : 0
@@ -496,11 +497,14 @@ function SummaryPanel({
       <button
         className="book-confirm"
         type="button"
-        disabled={!isReady}
+        disabled={!isReady || submitState?.status === 'saving'}
         onClick={onConfirm}
       >
-        Confirm booking
+        {submitState?.status === 'saving' ? 'Booking...' : 'Confirm booking'}
       </button>
+      {submitState?.status === 'error' && (
+        <p className="book-error">{submitState.message || 'Something went wrong.'}</p>
+      )}
       <p className="book-fineprint">
         Free cancellation up to 2 hours before. We'll text you a reminder the day before.
       </p>
@@ -508,13 +512,99 @@ function SummaryPanel({
   )
 }
 
-export default function BookAppointmentPage({ onBack, onOpenSidebar }) {
+export default function BookAppointmentPage({ onBack, onOpenSidebar, onNavigate, session }) {
   const [serviceId, setServiceId] = useState('classic-fade-beard')
-  const [barberId, setBarberId] = useState('jordan')
-  const [selectedDay, setSelectedDay] = useState(11)
-  const [selectedDateLabel, setSelectedDateLabel] = useState('Mon, May 11')
-  const [selectedTime, setSelectedTime] = useState('2:30 PM')
+  const [barberId, setBarberId] = useState(null)
+  const [selectedDay, setSelectedDay] = useState(null)
+  const [selectedDate, setSelectedDate] = useState(null)
+  const [selectedDateLabel, setSelectedDateLabel] = useState('')
+  const [selectedTime, setSelectedTime] = useState(null)
   const [notes, setNotes] = useState('')
+
+  const [barbers, setBarbers] = useState([])
+  const [barbersLoading, setBarbersLoading] = useState(true)
+  const [takenSlotsData, setTakenSlotsData] = useState(new Set())
+  const [takenSlotsKey, setTakenSlotsKey] = useState('')
+
+  const today = useMemo(() => new Date(), [])
+  const [cursor, setCursor] = useState({
+    year: today.getFullYear(),
+    month: today.getMonth(),
+  })
+
+  const [submitState, setSubmitState] = useState({ status: 'idle', message: '' })
+
+  // Fetch barbers from DB
+  useEffect(() => {
+    let cancelled = false
+    supabase
+      .from('barbers')
+      .select('id, fullname, initials, specialty, location, rating, review_count')
+      .eq('active', true)
+      .order('rating', { ascending: false })
+      .then(({ data }) => {
+        if (cancelled) return
+        setBarbers(data || [])
+        setBarbersLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const slotsKey =
+    barberId && selectedDate
+      ? `${barberId}|${selectedDate.getFullYear()}-${selectedDate.getMonth()}-${selectedDate.getDate()}`
+      : ''
+
+  // Fetch taken slots for selected barber+day
+  useEffect(() => {
+    if (!slotsKey || !barberId || !selectedDate) return undefined
+    let cancelled = false
+    const dayStart = new Date(selectedDate)
+    dayStart.setHours(0, 0, 0, 0)
+    const dayEnd = new Date(selectedDate)
+    dayEnd.setHours(23, 59, 59, 999)
+
+    supabase
+      .from('appointments')
+      .select('scheduled_at')
+      .eq('barber_id', barberId)
+      .eq('status', 'scheduled')
+      .gte('scheduled_at', dayStart.toISOString())
+      .lte('scheduled_at', dayEnd.toISOString())
+      .then(({ data }) => {
+        if (cancelled) return
+        const slotSet = new Set()
+        ;(data || []).forEach((row) => {
+          const d = new Date(row.scheduled_at)
+          let hour = d.getHours()
+          const minute = d.getMinutes()
+          const ampm = hour >= 12 ? 'PM' : 'AM'
+          if (hour === 0) hour = 12
+          else if (hour > 12) hour -= 12
+          slotSet.add(`${hour}:${String(minute).padStart(2, '0')} ${ampm}`)
+        })
+        setTakenSlotsData(slotSet)
+        setTakenSlotsKey(slotsKey)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [slotsKey, barberId, selectedDate])
+
+  const takenSlots =
+    slotsKey && takenSlotsKey === slotsKey ? takenSlotsData : new Set()
+
+  const calendarRows = useMemo(
+    () => buildCalendar(cursor.year, cursor.month, today),
+    [cursor.year, cursor.month, today],
+  )
+  const monthLabel = monthLabelOf(cursor.year, cursor.month)
+
+  const canGoBack =
+    cursor.year > today.getFullYear() ||
+    (cursor.year === today.getFullYear() && cursor.month > today.getMonth())
 
   const service = useMemo(
     () => services.find((s) => s.id === serviceId) || null,
@@ -522,28 +612,71 @@ export default function BookAppointmentPage({ onBack, onOpenSidebar }) {
   )
   const barber = useMemo(
     () => barbers.find((b) => b.id === barberId) || null,
-    [barberId],
+    [barbers, barberId],
   )
 
-  const isReady = Boolean(service && barber && selectedDay && selectedTime)
+  const isReady = Boolean(
+    service && barber && selectedDate && selectedTime && session?.user?.id,
+  )
 
-  const handleSelectDay = (day, label) => {
+  const handleSelectDay = (day, label, date) => {
     setSelectedDay(day)
-    if (label) {
-      setSelectedDateLabel(label)
-    } else {
-      setSelectedDateLabel(`May ${day}`)
+    setSelectedDate(date || null)
+    setSelectedDateLabel(label || `${MONTH_NAMES[cursor.month].slice(0, 3)} ${day}`)
+    setSelectedTime(null)
+  }
+
+  const handlePrevMonth = () => {
+    setCursor((c) => {
+      const month = c.month === 0 ? 11 : c.month - 1
+      const year = c.month === 0 ? c.year - 1 : c.year
+      return { year, month }
+    })
+  }
+
+  const handleNextMonth = () => {
+    setCursor((c) => {
+      const month = c.month === 11 ? 0 : c.month + 1
+      const year = c.month === 11 ? c.year + 1 : c.year
+      return { year, month }
+    })
+  }
+
+  const handleConfirm = async () => {
+    if (!isReady || submitState.status === 'saving') return
+    const scheduledAt = buildScheduledAt(selectedDate, selectedTime)
+    if (!scheduledAt || scheduledAt < new Date()) {
+      setSubmitState({ status: 'error', message: 'Pick a time in the future.' })
+      return
     }
+
+    setSubmitState({ status: 'saving', message: '' })
+    const { error } = await supabase.from('appointments').insert({
+      customer_id: session.user.id,
+      barber_id: barber.id,
+      service: service.name,
+      scheduled_at: scheduledAt.toISOString(),
+      duration_minutes: service.duration,
+      location: barber.location || 'Downtown',
+      price_cents: Math.round(service.price * 100),
+      status: 'scheduled',
+      notes: notes || null,
+    })
+
+    if (error) {
+      setSubmitState({ status: 'error', message: error.message })
+      return
+    }
+
+    setSubmitState({ status: 'success', message: '' })
+    if (onNavigate) onNavigate('appointments')
   }
 
-  const handleConfirm = () => {
-    if (!isReady) return
-    window.alert(
-      `Booking confirmed!\n\n${service.name} with ${barber.name}\n${selectedDateLabel} · ${selectedTime}`,
-    )
-  }
-
-  const currentStep = service ? (barber && selectedTime ? 2 : 1) : 0
+  const currentStep = service
+    ? barber && selectedTime
+      ? 2
+      : 1
+    : 0
 
   return (
     <section className="customer-main book-page" aria-label="Book appointment">
@@ -586,24 +719,36 @@ export default function BookAppointmentPage({ onBack, onOpenSidebar }) {
       <div className="book-layout">
         <div className="book-form-column">
           <ServicePanel selected={serviceId} onSelect={setServiceId} />
-          <BarberPanel selected={barberId} onSelect={setBarberId} />
+          <BarberPanel
+            selected={barberId}
+            onSelect={setBarberId}
+            barbers={barbers}
+            loading={barbersLoading}
+          />
           <WhenPanel
-            selectedBarberName={barber?.name || 'Any available'}
+            selectedBarberName={barber?.fullname || ''}
             selectedDay={selectedDay}
             selectedTime={selectedTime}
             onSelectDay={handleSelectDay}
             onSelectTime={setSelectedTime}
+            monthLabel={monthLabel}
+            calendarRows={calendarRows}
+            onPrevMonth={handlePrevMonth}
+            onNextMonth={handleNextMonth}
+            canGoBack={canGoBack}
+            takenSlots={takenSlots}
           />
           <NotesPanel value={notes} onChange={setNotes} />
         </div>
 
         <SummaryPanel
           service={service}
-          barber={barber}
+          barber={barber ? { ...barber, name: barber.fullname } : null}
           dateLabel={selectedDateLabel}
           selectedTime={selectedTime}
           isReady={isReady}
           onConfirm={handleConfirm}
+          submitState={submitState}
         />
       </div>
     </section>

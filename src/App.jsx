@@ -144,6 +144,8 @@ function App() {
               <BookAppointmentPage
                 onOpenSidebar={onOpenSidebar}
                 onBack={() => navigate('dashboard')}
+                onNavigate={navigate}
+                session={session}
               />
             )
           }
@@ -201,6 +203,7 @@ function App() {
             <CustomerDashboard
               onOpenSidebar={onOpenSidebar}
               onNavigate={navigate}
+              session={session}
             />
           )
         }}
