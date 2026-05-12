@@ -304,6 +304,7 @@ function TopBar({
   onSearchSelect,
   onOpenNotifications,
   onOpenProfile,
+  unreadCount = 0,
 }) {
   const greeting = displayName ? `Welcome back, ${displayName}` : 'Welcome back'
   const subtitle = nextTagline ? `${todayLabel} - ${nextTagline}` : todayLabel
@@ -327,8 +328,10 @@ function TopBar({
       <div className="customer-topbar-actions">
         <SearchBox onSelect={onSearchSelect} />
         <button
-          className="customer-square-button has-dot"
-          aria-label="Notifications"
+          className={`customer-square-button${unreadCount > 0 ? ' has-dot' : ''}`}
+          aria-label={
+            unreadCount > 0 ? `Notifications (${unreadCount} unread)` : 'Notifications'
+          }
           type="button"
           onClick={onOpenNotifications}
         >
@@ -719,7 +722,12 @@ function RecentVisits({ visits, onSeeAll, onBook }) {
   )
 }
 
-export default function CustomerDashboard({ onOpenSidebar, onNavigate, session }) {
+export default function CustomerDashboard({
+  onOpenSidebar,
+  onNavigate,
+  session,
+  unreadCount = 0,
+}) {
   const [customer, setCustomer] = useState(null)
   const [nextAppointment, setNextAppointment] = useState(null)
   const [lastVisit, setLastVisit] = useState(null)
@@ -830,6 +838,7 @@ export default function CustomerDashboard({ onOpenSidebar, onNavigate, session }
         onSearchSelect={handleSearchSelect}
         onOpenNotifications={() => onNavigate?.('notifications')}
         onOpenProfile={() => onNavigate?.('profile')}
+        unreadCount={unreadCount}
       />
       {nextAppointment ? (
         <HeroNextAppointment appointment={nextAppointment} onBook={goBook} />

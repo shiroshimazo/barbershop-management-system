@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { supabase } from '../lib/supabase.js'
 
 const KIND_LABEL = {
   all: 'All',
@@ -8,134 +9,97 @@ const KIND_LABEL = {
   offer: 'Offers',
 }
 
-const initialNotifications = [
-  {
-    id: 'n-001',
-    kind: 'booking',
-    unread: true,
-    needsAction: true,
-    title: 'Booking confirmed — Classic Fade + Beard Trim',
-    body: "You're set for Mon, May 11 at 2:30 PM (Downtown) with Jordan Tate. You can reschedule up to 2 hours before.",
-    timeLabel: 'Today',
-    when: 'Mon, May 11 · 2:30 PM',
-    who: 'Jordan Tate',
-    where: 'Downtown',
-    ago: '2m ago',
+function formatAgo(iso) {
+  const diff = Date.now() - new Date(iso).getTime()
+  if (diff < 0) return 'just now'
+  const mins = Math.floor(diff / 60_000)
+  if (mins < 1) return 'just now'
+  if (mins < 60) return `${mins}m ago`
+  const hours = Math.floor(mins / 60)
+  if (hours < 24) return `${hours}h ago`
+  const days = Math.floor(hours / 24)
+  if (days < 7) return `${days}d ago`
+  const weeks = Math.floor(days / 7)
+  if (weeks < 5) return `${weeks}w ago`
+  return new Date(iso).toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+  })
+}
+
+function formatTimeLabel(iso) {
+  const d = new Date(iso)
+  const now = new Date()
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  if (d >= startOfToday) return 'Today'
+  const startOfYesterday = new Date(startOfToday)
+  startOfYesterday.setDate(startOfYesterday.getDate() - 1)
+  if (d >= startOfYesterday) return 'Yesterday'
+  const days = Math.floor((startOfToday - d) / 86_400_000)
+  if (days < 7) return d.toLocaleDateString(undefined, { weekday: 'short' })
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+}
+
+function formatWhen(iso) {
+  if (!iso) return ''
+  const d = new Date(iso)
+  return `${d.toLocaleDateString(undefined, {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+  })} · ${d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}`
+}
+
+function derivePills(row) {
+  const pills = []
+  if (row.kind === 'booking') {
+    pills.push({ label: 'Bookings', variant: 'gold' })
+    if (row.needs_action) pills.push({ label: 'Needs action', variant: 'warn' })
+    if (row.actions?.primary && row.needs_action) {
+      pills.push({ label: row.actions.primary, variant: 'soft' })
+    }
+  } else if (row.kind === 'receipt') {
+    pills.push({ label: 'Receipts', variant: 'soft' })
+    pills.push({ label: 'Ready', variant: 'ok' })
+  } else if (row.kind === 'account') {
+    pills.push({ label: 'Account', variant: 'soft' })
+    pills.push({ label: 'Security', variant: 'soft' })
+  } else if (row.kind === 'offer') {
+    pills.push({ label: 'Offers', variant: 'soft' })
+    pills.push({ label: 'Gold', variant: 'gold' })
+  }
+  return pills
+}
+
+function mapNotification(row) {
+  const groupKey = (() => {
+    const diff = Date.now() - new Date(row.created_at).getTime()
+    return diff < 86_400_000 ? 'latest' : 'week'
+  })()
+  return {
+    id: row.id,
+    kind: row.kind,
+    unread: row.is_unread,
+    needsAction: !!row.needs_action,
+    title: row.title,
+    body: row.body || '',
+    timeLabel: formatTimeLabel(row.created_at),
+    when: formatWhen(row.when_at) || formatWhen(row.created_at),
+    who: row.who || '-',
+    where: row.where_at || '-',
+    ago: formatAgo(row.created_at),
     actions: {
-      primary: 'Add to calendar',
-      secondary: 'Reschedule',
-      tertiary: 'View booking',
+      primary: row.actions?.primary || 'Open',
+      secondary: row.actions?.secondary || 'Dismiss',
+      tertiary: row.actions?.tertiary || '',
     },
-    pills: [
-      { label: 'Bookings', variant: 'gold' },
-      { label: 'Needs action', variant: 'warn' },
-      { label: 'Add to calendar', variant: 'soft' },
-    ],
-    icon: 'calendar',
-    iconVariant: 'gold',
-    group: 'latest',
-  },
-  {
-    id: 'n-002',
-    kind: 'receipt',
-    unread: true,
-    needsAction: false,
-    title: 'Receipt ready — $48 (Downtown)',
-    body: 'Your receipt for Classic Fade + Beard Trim is available. Download PDF for reimbursements or expenses.',
-    timeLabel: 'Today',
-    when: 'May 11 · Receipt',
-    who: 'Blade & Co.',
-    where: 'Downtown',
-    ago: '18m ago',
-    actions: {
-      primary: 'Download PDF',
-      secondary: 'Email me',
-      tertiary: 'Open History',
-    },
-    pills: [
-      { label: 'Receipts', variant: 'soft' },
-      { label: 'Ready', variant: 'ok' },
-    ],
-    icon: 'receipt',
-    iconVariant: 'default',
-    group: 'latest',
-  },
-  {
-    id: 'n-003',
-    kind: 'account',
-    unread: false,
-    needsAction: false,
-    title: 'Profile updated',
-    body: "Your phone number and preferred location were updated. If this wasn't you, review active sessions.",
-    timeLabel: 'Wed',
-    when: 'May 07 · Account',
-    who: 'Marcus R.',
-    where: '—',
-    ago: '4d ago',
-    actions: {
-      primary: 'Review sessions',
-      secondary: 'Change password',
-      tertiary: 'Open profile',
-    },
-    pills: [
-      { label: 'Account', variant: 'soft' },
-      { label: 'Security', variant: 'soft' },
-    ],
-    icon: 'user',
-    iconVariant: 'default',
-    group: 'week',
-  },
-  {
-    id: 'n-004',
-    kind: 'booking',
-    unread: false,
-    needsAction: false,
-    title: 'Reminder — tomorrow at 11:00 AM',
-    body: 'Classic Fade at Downtown. Arrive 5 minutes early so your cut starts on time.',
-    timeLabel: 'Tue',
-    when: 'May 10 · 11:00 AM',
-    who: 'Jordan Tate',
-    where: 'Downtown',
-    ago: '5d ago',
-    actions: {
-      primary: 'Directions',
-      secondary: 'Reschedule',
-      tertiary: 'View booking',
-    },
-    pills: [
-      { label: 'Bookings', variant: 'gold' },
-      { label: 'Reminder', variant: 'soft' },
-    ],
-    icon: 'clock',
-    iconVariant: 'gold',
-    group: 'week',
-  },
-  {
-    id: 'n-005',
-    kind: 'offer',
-    unread: true,
-    needsAction: false,
-    title: 'Gold perk — free hot towel add-on',
-    body: 'For your next visit this month, add a free hot towel treatment at checkout. Valid at Downtown + Eastside.',
-    timeLabel: 'Mon',
-    when: 'May 05 · Offer',
-    who: 'Blade & Co.',
-    where: 'All locations',
-    ago: '6d ago',
-    actions: {
-      primary: 'Apply perk',
-      secondary: 'See terms',
-      tertiary: 'Book now',
-    },
-    pills: [
-      { label: 'Offers', variant: 'soft' },
-      { label: 'Gold', variant: 'gold' },
-    ],
-    icon: 'star',
-    iconVariant: 'default',
-    group: 'week',
-  },
-]
+    pills: derivePills(row),
+    icon: row.icon || 'bell',
+    iconVariant: row.icon_variant || 'default',
+    group: groupKey,
+  }
+}
+
 
 const tabs = [
   { id: 'all', label: 'All' },
@@ -379,12 +343,38 @@ function DetailPanel({ notif, onToggleRead, onAction, onHistory }) {
   )
 }
 
-export default function NotificationsPage({ onOpenSidebar, onNavigate }) {
-  const [notifs, setNotifs] = useState(initialNotifications)
+export default function NotificationsPage({
+  onOpenSidebar,
+  onNavigate,
+  session,
+  onUnreadChange,
+}) {
+  const userId = session?.user?.id
+  const [notifs, setNotifs] = useState([])
   const [activeTab, setActiveTab] = useState('all')
   const [activeChip, setActiveChip] = useState('all')
   const [query, setQuery] = useState('')
-  const [selectedId, setSelectedId] = useState('n-001')
+  const [selectedId, setSelectedId] = useState(null)
+
+  useEffect(() => {
+    if (!userId) return undefined
+    let cancelled = false
+    supabase
+      .from('notifications')
+      .select(
+        'id, kind, title, body, is_unread, needs_action, when_at, who, where_at, actions, icon, icon_variant, created_at',
+      )
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(50)
+      .then(({ data }) => {
+        if (cancelled) return
+        setNotifs((data || []).map(mapNotification))
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [userId])
 
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -408,21 +398,45 @@ export default function NotificationsPage({ onOpenSidebar, onNavigate }) {
 
   const selectedNotif = notifs.find((n) => n.id === effectiveId) || notifs[0]
 
+  const persistRead = async (ids, read) => {
+    if (!userId || ids.length === 0) return
+    await supabase
+      .from('notifications')
+      .update({
+        is_unread: !read,
+        read_at: read ? new Date().toISOString() : null,
+      })
+      .in('id', ids)
+      .eq('user_id', userId)
+    onUnreadChange?.()
+  }
+
   const setItem = (id) => {
     setSelectedId(id)
-    setNotifs((prev) =>
-      prev.map((n) => (n.id === id && n.unread ? { ...n, unread: false } : n)),
-    )
+    const target = notifs.find((n) => n.id === id)
+    if (target?.unread) {
+      setNotifs((prev) =>
+        prev.map((n) => (n.id === id ? { ...n, unread: false } : n)),
+      )
+      persistRead([id], true)
+    }
   }
 
   const toggleRead = (id) => {
+    const target = notifs.find((n) => n.id === id)
+    if (!target) return
+    const nextUnread = !target.unread
     setNotifs((prev) =>
-      prev.map((n) => (n.id === id ? { ...n, unread: !n.unread } : n)),
+      prev.map((n) => (n.id === id ? { ...n, unread: nextUnread } : n)),
     )
+    persistRead([id], !nextUnread)
   }
 
   const markAllRead = () => {
+    const unreadIds = notifs.filter((n) => n.unread).map((n) => n.id)
+    if (unreadIds.length === 0) return
     setNotifs((prev) => prev.map((n) => ({ ...n, unread: false })))
+    persistRead(unreadIds, true)
   }
 
   const onTabChange = (id) => {
@@ -432,9 +446,11 @@ export default function NotificationsPage({ onOpenSidebar, onNavigate }) {
   }
 
   const onAction = (notif) => {
+    if (!notif.unread) return
     setNotifs((prev) =>
       prev.map((n) => (n.id === notif.id ? { ...n, unread: false } : n)),
     )
+    persistRead([notif.id], true)
   }
 
   const goBook = () => onNavigate?.('book')

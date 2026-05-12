@@ -10,7 +10,7 @@ const navItems = [
 
 const accountItems = [
   { id: 'profile', icon: 'user', label: 'My profile' },
-  { id: 'notifications', icon: 'bell', label: 'Notifications', badge: 1 },
+  { id: 'notifications', icon: 'bell', label: 'Notifications' },
   { id: 'settings', icon: 'settings', label: 'Settings' },
 ]
 
@@ -124,7 +124,19 @@ function SidebarSection({ label, items, activeId, onNavigate }) {
   )
 }
 
-function CustomerSidebar({ activeId, isOpen, onClose, onNavigate, onLogoutRequest }) {
+function CustomerSidebar({
+  activeId,
+  isOpen,
+  onClose,
+  onNavigate,
+  onLogoutRequest,
+  unreadCount = 0,
+}) {
+  const decoratedAccountItems = accountItems.map((item) =>
+    item.id === 'notifications' && unreadCount > 0
+      ? { ...item, badge: unreadCount }
+      : item,
+  )
   return (
     <aside
       className={`customer-sidebar${isOpen ? ' is-open' : ''}`}
@@ -146,7 +158,7 @@ function CustomerSidebar({ activeId, isOpen, onClose, onNavigate, onLogoutReques
       <SidebarSection items={navItems} activeId={activeId} onNavigate={onNavigate} />
       <SidebarSection
         label="Account"
-        items={accountItems}
+        items={decoratedAccountItems}
         activeId={activeId}
         onNavigate={onNavigate}
       />
@@ -200,7 +212,13 @@ function LogoutDialog({ onCancel, onConfirm }) {
   )
 }
 
-export default function CustomerShell({ activeNav, onNavigate, onLogout, children }) {
+export default function CustomerShell({
+  activeNav,
+  onNavigate,
+  onLogout,
+  unreadCount = 0,
+  children,
+}) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
   const [isLogoutDialogOpen, setIsLogoutDialogOpen] = useState(false)
 
@@ -227,6 +245,7 @@ export default function CustomerShell({ activeNav, onNavigate, onLogout, childre
         onClose={() => setIsSidebarOpen(false)}
         onNavigate={handleNavigate}
         onLogoutRequest={openLogoutDialog}
+        unreadCount={unreadCount}
       />
       <button
         aria-label="Close navigation"

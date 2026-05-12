@@ -87,6 +87,28 @@ function App() {
 
   const sessionUserId = session?.user?.id ?? null
   const isRoleLoading = !!sessionUserId && roleForUserId !== sessionUserId
+  const [unreadByUser, setUnreadByUser] = useState({})
+  const [unreadTick, setUnreadTick] = useState(0)
+  const unreadCount = sessionUserId ? unreadByUser[sessionUserId] || 0 : 0
+
+  useEffect(() => {
+    if (!sessionUserId || userRole !== 'customer') return undefined
+    let cancelled = false
+    supabase
+      .from('notifications')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', sessionUserId)
+      .eq('is_unread', true)
+      .then(({ count }) => {
+        if (cancelled) return
+        setUnreadByUser((prev) => ({ ...prev, [sessionUserId]: count || 0 }))
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [sessionUserId, userRole, unreadTick])
+
+  const refreshUnread = () => setUnreadTick((t) => t + 1)
 
   useEffect(() => {
     if (!sessionUserId) return undefined
@@ -137,6 +159,7 @@ function App() {
         activeNav={activeNav}
         onNavigate={navigate}
         onLogout={handleLogout}
+        unreadCount={unreadCount}
       >
         {({ onOpenSidebar }) => {
           if (customerPage === 'book') {
@@ -190,6 +213,8 @@ function App() {
               <NotificationsPage
                 onOpenSidebar={onOpenSidebar}
                 onNavigate={navigate}
+                session={session}
+                onUnreadChange={refreshUnread}
               />
             )
           }
@@ -209,6 +234,7 @@ function App() {
               onOpenSidebar={onOpenSidebar}
               onNavigate={navigate}
               session={session}
+              unreadCount={unreadCount}
             />
           )
         }}
