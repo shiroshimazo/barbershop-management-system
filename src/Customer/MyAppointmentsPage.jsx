@@ -1,16 +1,10 @@
-import { useMemo, useState } from 'react'
-
-const stats = [
-  { id: 'upcoming', icon: 'calendar', value: '2', label: 'Upcoming' },
-  { id: 'next', icon: 'clock', value: '3', suffix: 'd', label: 'Until next cut' },
-  { id: 'visits', icon: 'rotate', value: '24', label: 'Total this year' },
-  { id: 'loyalty', icon: 'star', value: '1,240', label: 'Loyalty points' },
-]
+import { useEffect, useMemo, useState } from 'react'
+import { supabase } from '../lib/supabase.js'
 
 const tabs = [
-  { id: 'upcoming', label: 'Upcoming', count: 2 },
-  { id: 'past', label: 'Past', count: 24 },
-  { id: 'cancelled', label: 'Cancelled', count: 1 },
+  { id: 'upcoming', label: 'Upcoming' },
+  { id: 'past', label: 'Past' },
+  { id: 'cancelled', label: 'Cancelled' },
 ]
 
 const filters = [
@@ -19,57 +13,64 @@ const filters = [
   { id: 'month', label: 'This month' },
 ]
 
-const appointments = [
-  {
-    id: 'apt-1',
-    tab: 'upcoming',
-    monthShort: 'MAY',
-    day: '11',
-    weekday: 'Mon',
-    isoDate: '2026-05-11',
-    service: 'Classic Fade + Beard Trim.',
-    time: '2:30 PM',
-    duration: '45 min',
-    barber: 'Jordan Tate',
-    location: 'Downtown',
-    price: 48,
-    status: 'confirmed',
-    countdown: 'In 3 days',
-    reminder: true,
-  },
-  {
-    id: 'apt-2',
-    tab: 'upcoming',
-    monthShort: 'MAY',
-    day: '28',
-    weekday: 'Thu',
-    isoDate: '2026-05-28',
-    service: 'Beard Sculpt & Hot Towel',
-    time: '11:00 AM',
-    duration: '30 min',
-    barber: 'Sami Kade',
-    location: 'Eastside',
-    price: 32,
-    status: 'pending',
-    countdown: 'In 19 days',
-  },
-  {
-    id: 'apt-3',
-    tab: 'past',
-    monthShort: 'APR',
-    day: '22',
-    weekday: 'Wed',
-    isoDate: '2026-04-22',
-    service: 'Classic Fade + Beard Trim',
-    time: '3:15 PM',
-    duration: '45 min',
-    barber: 'Jordan Tate',
-    location: 'Downtown',
-    price: 48,
-    status: 'completed',
-    rating: 5,
-  },
-]
+function formatMonthShort(date) {
+  return date
+    .toLocaleDateString(undefined, { month: 'short' })
+    .toUpperCase()
+}
+function formatDay(date) {
+  return String(date.getDate()).padStart(2, '0')
+}
+function formatWeekday(date) {
+  return date.toLocaleDateString(undefined, { weekday: 'short' })
+}
+function formatTime(date) {
+  return date.toLocaleTimeString(undefined, {
+    hour: 'numeric',
+    minute: '2-digit',
+  })
+}
+function startOfDay(date) {
+  const d = new Date(date)
+  d.setHours(0, 0, 0, 0)
+  return d
+}
+function countdownLabel(scheduledAt) {
+  const target = startOfDay(new Date(scheduledAt))
+  const today = startOfDay(new Date())
+  const days = Math.round((target - today) / 86_400_000)
+  if (days < 0) return null
+  if (days === 0) return 'Today'
+  if (days === 1) return 'Tomorrow'
+  return `In ${days} days`
+}
+function mapAppointmentRow(row, kind) {
+  const d = new Date(row.scheduled_at || row.visited_at)
+  const status =
+    kind === 'past'
+      ? 'completed'
+      : kind === 'cancelled'
+        ? 'cancelled'
+        : 'confirmed'
+  return {
+    id: row.id,
+    rawRow: row,
+    dateObj: d,
+    monthShort: formatMonthShort(d),
+    day: formatDay(d),
+    weekday: formatWeekday(d),
+    isoDate: d.toISOString().slice(0, 10),
+    service: row.service,
+    time: formatTime(d),
+    duration: `${row.duration_minutes || 45} min`,
+    barber: row.barber?.fullname || 'Barber',
+    location: row.location || '-',
+    price: Math.round((row.price_cents || 0) / 100),
+    status,
+    countdown: kind === 'upcoming' ? countdownLabel(row.scheduled_at) : null,
+    rating: row.rating || null,
+  }
+}
 
 function Icon({ name }) {
   const commonProps = {
@@ -179,10 +180,18 @@ function StatusBadge({ status }) {
       </span>
     )
   }
+  if (status === 'cancelled') {
+    return (
+      <span className="apt-status apt-status-completed">
+        <span className="apt-dot" aria-hidden="true" />
+        Cancelled
+      </span>
+    )
+  }
   return null
 }
 
-function AppointmentRow({ appt, onBook }) {
+function AppointmentRow({ appt, onBook, onCancel, cancelling }) {
   const isCompleted = appt.status === 'completed'
 
   return (
@@ -212,7 +221,6 @@ function AppointmentRow({ appt, onBook }) {
         <div className="apt-tags">
           <StatusBadge status={appt.status} />
           {appt.countdown && <span className="apt-chip-soft">{appt.countdown}</span>}
-          {appt.reminder && <span className="apt-chip-soft">Reminder set</span>}
           {isCompleted && appt.rating && (
             <span className="apt-chip-soft apt-chip-rated">
               ★ You rated {appt.rating}/5
@@ -230,27 +238,20 @@ function AppointmentRow({ appt, onBook }) {
               Get directions
             </button>
             <div className="apt-btn-row">
-              <button className="apt-btn apt-btn-light" type="button">
+              <button
+                className="apt-btn apt-btn-light"
+                type="button"
+                onClick={onBook}
+              >
                 Reschedule
               </button>
-              <button className="apt-btn apt-btn-danger" type="button">
-                Cancel
-              </button>
-            </div>
-          </>
-        )}
-        {appt.status === 'pending' && (
-          <>
-            <button className="apt-btn apt-btn-primary" type="button">
-              <Icon name="calendar-plus" />
-              Add to calendar
-            </button>
-            <div className="apt-btn-row">
-              <button className="apt-btn apt-btn-light" type="button">
-                Reschedule
-              </button>
-              <button className="apt-btn apt-btn-danger" type="button">
-                Cancel
+              <button
+                className="apt-btn apt-btn-danger"
+                type="button"
+                onClick={() => onCancel?.(appt)}
+                disabled={cancelling}
+              >
+                {cancelling ? 'Cancelling...' : 'Cancel'}
               </button>
             </div>
           </>
@@ -271,38 +272,182 @@ function AppointmentRow({ appt, onBook }) {
             </div>
           </>
         )}
+        {appt.status === 'cancelled' && (
+          <button
+            className="apt-btn apt-btn-primary"
+            type="button"
+            onClick={onBook}
+          >
+            Rebook
+          </button>
+        )}
       </div>
     </article>
   )
 }
 
-export default function MyAppointmentsPage({ onOpenSidebar, onNavigate }) {
+export default function MyAppointmentsPage({ onOpenSidebar, onNavigate, session }) {
   const [activeTab, setActiveTab] = useState('upcoming')
   const [activeFilter, setActiveFilter] = useState('all')
   const [query, setQuery] = useState('')
+  const [upcomingRows, setUpcomingRows] = useState([])
+  const [pastRows, setPastRows] = useState([])
+  const [cancelledRows, setCancelledRows] = useState([])
+  const [loyaltyPoints, setLoyaltyPoints] = useState(0)
+  const [cancellingId, setCancellingId] = useState(null)
+  const [refreshTick, setRefreshTick] = useState(0)
 
-  const upcoming = useMemo(
-    () => appointments.filter((a) => a.tab === activeTab),
-    [activeTab],
-  )
+  const userId = session?.user?.id
+
+  useEffect(() => {
+    if (!userId) return undefined
+    let cancelled = false
+    const nowIso = new Date().toISOString()
+    const select = `
+      id, service, scheduled_at, duration_minutes, location, price_cents, status, notes,
+      barber:barbers ( id, fullname, initials, specialty, location )
+    `
+
+    Promise.all([
+      supabase
+        .from('appointments')
+        .select(select)
+        .eq('customer_id', userId)
+        .eq('status', 'scheduled')
+        .gte('scheduled_at', nowIso)
+        .order('scheduled_at', { ascending: true }),
+      supabase
+        .from('visits')
+        .select(
+          'id, service, visited_at, location, price_cents, rating, barber:barbers ( id, fullname )',
+        )
+        .eq('customer_id', userId)
+        .order('visited_at', { ascending: false }),
+      supabase
+        .from('appointments')
+        .select(select)
+        .eq('customer_id', userId)
+        .in('status', ['cancelled', 'no_show'])
+        .order('scheduled_at', { ascending: false }),
+      supabase
+        .from('customers')
+        .select('loyalty_points')
+        .eq('id', userId)
+        .single(),
+    ]).then(([up, past, cncl, cust]) => {
+      if (cancelled) return
+      setUpcomingRows((up.data || []).map((r) => mapAppointmentRow(r, 'upcoming')))
+      setPastRows((past.data || []).map((r) => mapAppointmentRow(r, 'past')))
+      setCancelledRows((cncl.data || []).map((r) => mapAppointmentRow(r, 'cancelled')))
+      setLoyaltyPoints(cust.data?.loyalty_points || 0)
+    })
+
+    return () => {
+      cancelled = true
+    }
+  }, [userId, refreshTick])
+
+  const tabRows = {
+    upcoming: upcomingRows,
+    past: pastRows,
+    cancelled: cancelledRows,
+  }[activeTab]
 
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase()
-    if (!q) return upcoming
-    return upcoming.filter(
-      (a) =>
-        a.service.toLowerCase().includes(q) ||
-        a.barber.toLowerCase().includes(q) ||
-        a.location.toLowerCase().includes(q),
-    )
-  }, [upcoming, query])
+    const now = new Date()
+    const weekFromNow = new Date(now)
+    weekFromNow.setDate(weekFromNow.getDate() + 7)
+    const monthFromNow = new Date(now)
+    monthFromNow.setMonth(monthFromNow.getMonth() + 1)
+
+    return tabRows.filter((a) => {
+      // text search
+      if (
+        q &&
+        ![a.service, a.barber, a.location]
+          .filter(Boolean)
+          .some((field) => field.toLowerCase().includes(q))
+      ) {
+        return false
+      }
+      // date filter — only meaningful for upcoming
+      if (activeTab === 'upcoming') {
+        if (activeFilter === 'week' && a.dateObj > weekFromNow) return false
+        if (activeFilter === 'month' && a.dateObj > monthFromNow) return false
+      }
+      return true
+    })
+  }, [tabRows, activeTab, activeFilter, query])
 
   const recentlyCompleted = useMemo(
-    () => (activeTab === 'upcoming' ? appointments.filter((a) => a.status === 'completed') : []),
-    [activeTab],
+    () => (activeTab === 'upcoming' ? pastRows.slice(0, 2) : []),
+    [activeTab, pastRows],
   )
 
   const goBook = () => onNavigate?.('book')
+
+  const handleCancel = async (appt) => {
+    if (!appt?.id) return
+    if (!window.confirm('Cancel this appointment? You can rebook from this page.')) return
+    setCancellingId(appt.id)
+    const { error } = await supabase
+      .from('appointments')
+      .update({ status: 'cancelled' })
+      .eq('id', appt.id)
+      .eq('customer_id', userId)
+    setCancellingId(null)
+    if (error) {
+      window.alert(`Couldn't cancel: ${error.message}`)
+      return
+    }
+    setRefreshTick((t) => t + 1)
+  }
+
+  // Live stats
+  const yearStart = new Date(new Date().getFullYear(), 0, 1)
+  const visitsThisYear = pastRows.filter((v) => v.dateObj >= yearStart).length
+  const nextAppt = upcomingRows[0]
+  const daysUntilNext = nextAppt
+    ? Math.max(
+        0,
+        Math.round((startOfDay(nextAppt.dateObj) - startOfDay(new Date())) / 86_400_000),
+      )
+    : null
+
+  const stats = [
+    {
+      id: 'upcoming',
+      icon: 'calendar',
+      value: String(upcomingRows.length),
+      label: 'Upcoming',
+    },
+    {
+      id: 'next',
+      icon: 'clock',
+      value: daysUntilNext != null ? String(daysUntilNext) : '-',
+      suffix: daysUntilNext != null ? 'd' : null,
+      label: 'Until next cut',
+    },
+    {
+      id: 'visits',
+      icon: 'rotate',
+      value: String(visitsThisYear),
+      label: 'Total this year',
+    },
+    {
+      id: 'loyalty',
+      icon: 'star',
+      value: loyaltyPoints.toLocaleString(),
+      label: 'Loyalty points',
+    },
+  ]
+
+  const tabCounts = {
+    upcoming: upcomingRows.length,
+    past: pastRows.length,
+    cancelled: cancelledRows.length,
+  }
 
   return (
     <section className="customer-main apt-page" aria-label="My appointments">
@@ -370,7 +515,7 @@ export default function MyAppointmentsPage({ onOpenSidebar, onNavigate }) {
             onClick={() => setActiveTab(tab.id)}
           >
             <span>{tab.label}</span>
-            <span className="apt-tab-count">{tab.count}</span>
+            <span className="apt-tab-count">{tabCounts[tab.id]}</span>
           </button>
         ))}
       </div>
@@ -408,10 +553,22 @@ export default function MyAppointmentsPage({ onOpenSidebar, onNavigate }) {
 
       <div className="apt-list">
         {visible.length === 0 ? (
-          <p className="apt-empty">No appointments match your search.</p>
+          <p className="apt-empty">
+            {activeTab === 'upcoming'
+              ? "Nothing booked yet. Hit \"+ New booking\" to set up your next cut."
+              : activeTab === 'past'
+                ? 'No completed visits yet. Once a cut wraps up it shows up here.'
+                : 'No cancelled appointments. Clean slate.'}
+          </p>
         ) : (
           visible.map((appt) => (
-            <AppointmentRow appt={appt} key={appt.id} onBook={goBook} />
+            <AppointmentRow
+              appt={appt}
+              key={appt.id}
+              onBook={goBook}
+              onCancel={handleCancel}
+              cancelling={cancellingId === appt.id}
+            />
           ))
         )}
       </div>

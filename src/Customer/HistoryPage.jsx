@@ -1,17 +1,5 @@
-import { useMemo, useState } from 'react'
-
-const stats = [
-  { id: 'past', icon: 'history', value: '24', label: 'Past visits', variant: 'gold' },
-  { id: 'receipts', icon: 'receipt', value: '12', label: 'Receipts saved' },
-  { id: 'year', icon: 'document', value: '24', label: 'This year' },
-  { id: 'loyalty', icon: 'star', value: '1,240', label: 'Loyalty points' },
-]
-
-const tabs = [
-  { id: 'visits', label: 'Visits', count: 24 },
-  { id: 'receipts', label: 'Receipts', count: 12 },
-  { id: 'tips', label: 'Tips' },
-]
+import { useEffect, useMemo, useState } from 'react'
+import { supabase } from '../lib/supabase.js'
 
 const chips = [
   { id: 'all', label: 'All' },
@@ -19,98 +7,43 @@ const chips = [
   { id: 'year', label: 'This year' },
 ]
 
-const visits = [
-  {
-    id: 'v-0511',
-    monthKey: '2026-05',
-    monthLabel: 'May 2026',
-    monthShort: 'MAY',
-    day: '11',
-    weekday: 'Mon',
-    isoDate: '2026-05-11',
-    service: 'Classic Fade + Beard Trim',
-    time: '2:30 PM',
-    duration: '45 min',
-    barber: 'Jordan Tate',
-    location: 'Downtown',
-    price: 48,
-    status: 'Completed',
-    rating: null,
-    when: 'Mon, May 11 · 2:30 PM',
-  },
-  {
-    id: 'v-0422',
-    monthKey: '2026-04',
-    monthLabel: 'April 2026',
-    monthShort: 'APR',
-    day: '22',
-    weekday: 'Wed',
-    isoDate: '2026-04-22',
-    service: 'Classic Fade + Beard Trim',
-    time: '3:15 PM',
-    duration: '45 min',
-    barber: 'Jordan Tate',
-    location: 'Downtown',
-    price: 48,
-    status: 'Completed',
-    rating: '5/5',
-    when: 'Wed, Apr 22 · 3:15 PM',
-  },
-  {
-    id: 'v-0328',
-    monthKey: '2026-03',
-    monthLabel: 'March 2026',
-    monthShort: 'MAR',
-    day: '28',
-    weekday: 'Sat',
-    isoDate: '2026-03-28',
-    service: 'Skin Fade',
-    time: '1:30 PM',
-    duration: '40 min',
-    barber: 'Rey Vargas',
-    location: 'Downtown',
-    price: 40,
-    status: 'Completed',
-    rating: null,
-    when: 'Sat, Mar 28 · 1:30 PM',
-  },
-  {
-    id: 'v-0302',
-    monthKey: '2026-03',
-    monthLabel: 'March 2026',
-    monthShort: 'MAR',
-    day: '02',
-    weekday: 'Mon',
-    isoDate: '2026-03-02',
-    service: 'Beard Sculpt & Hot Towel',
-    time: '6:00 PM',
-    duration: '30 min',
-    barber: 'Sami Kade',
-    location: 'Eastside',
-    price: 32,
-    status: 'Completed',
-    rating: null,
-    when: 'Mon, Mar 02 · 6:00 PM',
-  },
-  {
-    id: 'v-0208',
-    monthKey: '2026-02',
-    monthLabel: 'February 2026',
-    monthShort: 'FEB',
-    day: '08',
-    weekday: 'Sat',
-    isoDate: '2026-02-08',
-    service: 'Classic Fade',
-    time: '11:00 AM',
-    duration: '40 min',
-    barber: 'Jordan Tate',
-    location: 'Downtown',
-    price: 40,
-    status: 'Completed',
-    rating: null,
-    when: 'Sat, Feb 08 · 11:00 AM',
-  },
+const MONTH_NAMES = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
 ]
+
+function mapVisit(row) {
+  const d = new Date(row.visited_at)
+  const monthShort = d
+    .toLocaleDateString(undefined, { month: 'short' })
+    .toUpperCase()
+  const weekday = d.toLocaleDateString(undefined, { weekday: 'short' })
+  const time = d.toLocaleTimeString(undefined, {
+    hour: 'numeric',
+    minute: '2-digit',
+  })
+  const monthLabel = `${MONTH_NAMES[d.getMonth()]} ${d.getFullYear()}`
+  return {
+    id: row.id,
+    dateObj: d,
+    monthKey: `${d.getFullYear()}-${d.getMonth()}`,
+    monthLabel,
+    monthShort,
+    day: String(d.getDate()).padStart(2, '0'),
+    weekday,
+    isoDate: d.toISOString().slice(0, 10),
+    service: row.service,
+    time,
+    duration: `${row.duration_minutes || 45} min`,
+    barber: row.barber?.fullname || 'Barber',
+    location: row.location || '-',
+    price: Math.round((row.price_cents || 0) / 100),
+    status: 'Completed',
+    rating: row.rating ? `${row.rating}/5` : null,
+    when: `${weekday}, ${MONTH_NAMES[d.getMonth()].slice(0, 3)} ${d.getDate()} · ${time}`,
+  }
+}
+
 
 function Icon({ name }) {
   const commonProps = {
@@ -272,6 +205,18 @@ function VisitCard({ visit, selected, onSelect, onRebook }) {
 }
 
 function DetailPanel({ visit, onRebook }) {
+  if (!visit) {
+    return (
+      <aside className="hist-detail" aria-label="Receipt preview">
+        <p className="hist-kicker">Receipt preview</p>
+        <h2>No visit selected</h2>
+        <p className="hist-detail-sub">
+          Once you have completed visits they will appear on the left. Pick one to see the
+          receipt details here.
+        </p>
+      </aside>
+    )
+  }
   return (
     <aside className="hist-detail" aria-label="Receipt preview">
       <p className="hist-kicker">Receipt preview</p>
@@ -325,22 +270,61 @@ function DetailPanel({ visit, onRebook }) {
   )
 }
 
-export default function HistoryPage({ onOpenSidebar, onNavigate }) {
+export default function HistoryPage({ onOpenSidebar, onNavigate, session }) {
   const [activeTab, setActiveTab] = useState('visits')
   const [activeChip, setActiveChip] = useState('all')
   const [query, setQuery] = useState('')
-  const [selectedId, setSelectedId] = useState(visits[0].id)
+  const [visits, setVisits] = useState([])
+  const [loyaltyPoints, setLoyaltyPoints] = useState(0)
+  const [selectedId, setSelectedId] = useState(null)
+
+  const userId = session?.user?.id
+
+  useEffect(() => {
+    if (!userId) return undefined
+    let cancelled = false
+    Promise.all([
+      supabase
+        .from('visits')
+        .select(
+          'id, service, visited_at, location, price_cents, rating, barber:barbers ( id, fullname )',
+        )
+        .eq('customer_id', userId)
+        .order('visited_at', { ascending: false }),
+      supabase
+        .from('customers')
+        .select('loyalty_points')
+        .eq('id', userId)
+        .single(),
+    ]).then(([visitsRes, custRes]) => {
+      if (cancelled) return
+      setVisits((visitsRes.data || []).map(mapVisit))
+      setLoyaltyPoints(custRes.data?.loyalty_points || 0)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [userId])
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
-    if (!q) return visits
-    return visits.filter(
-      (v) =>
-        v.service.toLowerCase().includes(q) ||
-        v.barber.toLowerCase().includes(q) ||
-        v.location.toLowerCase().includes(q),
-    )
-  }, [query])
+    const now = new Date()
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
+    const startOfYear = new Date(now.getFullYear(), 0, 1)
+
+    return visits.filter((v) => {
+      if (q) {
+        const hit = [v.service, v.barber, v.location]
+          .filter(Boolean)
+          .some((field) => field.toLowerCase().includes(q))
+        if (!hit) return false
+      }
+      if (activeChip === 'month' && v.dateObj < startOfMonth) return false
+      if (activeChip === 'year' && v.dateObj < startOfYear) return false
+      if (activeTab === 'tips' && !v.rating) return false
+      return true
+    })
+  }, [visits, query, activeChip, activeTab])
 
   const grouped = useMemo(() => {
     const groups = []
@@ -355,8 +339,27 @@ export default function HistoryPage({ onOpenSidebar, onNavigate }) {
     return groups
   }, [filtered])
 
-  const selected = visits.find((v) => v.id === selectedId) || visits[0]
+  const effectiveSelectedId =
+    filtered.find((v) => v.id === selectedId)?.id || filtered[0]?.id || null
+  const selected = filtered.find((v) => v.id === effectiveSelectedId) || filtered[0]
   const goBook = () => onNavigate?.('book')
+
+  // Live stats
+  const yearStart = new Date(new Date().getFullYear(), 0, 1)
+  const visitsThisYear = visits.filter((v) => v.dateObj >= yearStart).length
+  const stats = [
+    { id: 'past', icon: 'history', value: String(visits.length), label: 'Past visits', variant: 'gold' },
+    { id: 'receipts', icon: 'receipt', value: String(visits.length), label: 'Receipts saved' },
+    { id: 'year', icon: 'document', value: String(visitsThisYear), label: 'This year' },
+    { id: 'loyalty', icon: 'star', value: loyaltyPoints.toLocaleString(), label: 'Loyalty points' },
+  ]
+
+  const ratedCount = visits.filter((v) => v.rating).length
+  const tabs = [
+    { id: 'visits', label: 'Visits', count: visits.length },
+    { id: 'receipts', label: 'Receipts', count: visits.length },
+    { id: 'tips', label: 'Tips', count: ratedCount },
+  ]
 
   return (
     <section className="customer-main hist-page" aria-label="History">
@@ -471,7 +474,11 @@ export default function HistoryPage({ onOpenSidebar, onNavigate }) {
       <div className="hist-content">
         <div className="hist-list-panel">
           {grouped.length === 0 ? (
-            <p className="hist-empty">No visits match your search.</p>
+            <p className="hist-empty">
+              {visits.length === 0
+                ? "No visits yet. Once an appointment wraps up it'll show here with the full receipt."
+                : 'No visits match your search.'}
+            </p>
           ) : (
             grouped.map((group) => (
               <div className="hist-group" key={group.key}>
@@ -481,7 +488,7 @@ export default function HistoryPage({ onOpenSidebar, onNavigate }) {
                     <VisitCard
                       key={visit.id}
                       visit={visit}
-                      selected={visit.id === selectedId}
+                      selected={visit.id === effectiveSelectedId}
                       onSelect={setSelectedId}
                       onRebook={goBook}
                     />
@@ -493,7 +500,8 @@ export default function HistoryPage({ onOpenSidebar, onNavigate }) {
 
           <footer className="hist-pagination">
             <p>
-              Showing <strong>{filtered.length}</strong> of <strong>24</strong> visits
+              Showing <strong>{filtered.length}</strong> of{' '}
+              <strong>{visits.length}</strong> visits
             </p>
             <button className="hist-load-more" type="button">
               Load more →

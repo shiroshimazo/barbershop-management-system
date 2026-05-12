@@ -154,6 +154,7 @@ function App() {
               <MyAppointmentsPage
                 onOpenSidebar={onOpenSidebar}
                 onNavigate={navigate}
+                session={session}
               />
             )
           }
@@ -162,6 +163,7 @@ function App() {
               <HistoryPage
                 onOpenSidebar={onOpenSidebar}
                 onNavigate={navigate}
+                session={session}
               />
             )
           }
