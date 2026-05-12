@@ -172,6 +172,7 @@ function App() {
               <FavouritesPage
                 onOpenSidebar={onOpenSidebar}
                 onNavigate={navigate}
+                session={session}
               />
             )
           }

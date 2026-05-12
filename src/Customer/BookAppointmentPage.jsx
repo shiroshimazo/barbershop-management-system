@@ -246,7 +246,14 @@ function ServicePanel({ selected, onSelect }) {
   )
 }
 
-function BarberPanel({ selected, onSelect, barbers, loading }) {
+function BarberPanel({
+  selected,
+  onSelect,
+  barbers,
+  loading,
+  favoriteIds,
+  onToggleFavorite,
+}) {
   return (
     <section className="book-panel" aria-labelledby="book-barber-heading">
       <header className="book-panel-head">
@@ -263,23 +270,45 @@ function BarberPanel({ selected, onSelect, barbers, loading }) {
         <p className="book-loading">No barbers available right now.</p>
       ) : (
         <div className="book-barber-grid">
-          {barbers.map((barber) => (
-            <button
-              className={`book-barber-card${selected === barber.id ? ' is-selected' : ''}`}
-              key={barber.id}
-              type="button"
-              onClick={() => onSelect(barber.id)}
-            >
-              <span className="book-barber-radio" aria-hidden="true" />
-              <span className="book-barber-avatar">{barber.initials}</span>
-              <strong>{barber.fullname}</strong>
-              <small>
-                {barber.specialty}
-                {barber.location && ` · ${barber.location}`}
-              </small>
-              <span className="book-barber-rating">★ {barber.rating}</span>
-            </button>
-          ))}
+          {barbers.map((barber) => {
+            const isFav = favoriteIds?.has(barber.id)
+            return (
+              <div
+                className={`book-barber-card${selected === barber.id ? ' is-selected' : ''}`}
+                key={barber.id}
+                role="button"
+                tabIndex={0}
+                onClick={() => onSelect(barber.id)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault()
+                    onSelect(barber.id)
+                  }
+                }}
+              >
+                <span className="book-barber-radio" aria-hidden="true" />
+                <span className="book-barber-avatar">{barber.initials}</span>
+                <strong>{barber.fullname}</strong>
+                <small>
+                  {barber.specialty}
+                  {barber.location && ` · ${barber.location}`}
+                </small>
+                <span className="book-barber-rating">★ {barber.rating}</span>
+                <button
+                  className={`book-barber-fav${isFav ? ' is-saved' : ''}`}
+                  type="button"
+                  aria-label={isFav ? 'Remove from favourites' : 'Save to favourites'}
+                  title={isFav ? 'Saved' : 'Save to favourites'}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    onToggleFavorite?.(barber.id, !isFav)
+                  }}
+                >
+                  ★
+                </button>
+              </div>
+            )
+          })}
         </div>
       )}
     </section>
@@ -525,6 +554,8 @@ export default function BookAppointmentPage({ onBack, onOpenSidebar, onNavigate,
   const [barbersLoading, setBarbersLoading] = useState(true)
   const [takenSlotsData, setTakenSlotsData] = useState(new Set())
   const [takenSlotsKey, setTakenSlotsKey] = useState('')
+  const [favoriteIds, setFavoriteIds] = useState(new Set())
+  const userId = session?.user?.id
 
   const today = useMemo(() => new Date(), [])
   const [cursor, setCursor] = useState({
@@ -551,6 +582,62 @@ export default function BookAppointmentPage({ onBack, onOpenSidebar, onNavigate,
       cancelled = true
     }
   }, [])
+
+  // Fetch user's favourite barber ids
+  useEffect(() => {
+    if (!userId) return undefined
+    let cancelled = false
+    supabase
+      .from('favorites')
+      .select('barber_id')
+      .eq('customer_id', userId)
+      .then(({ data }) => {
+        if (cancelled) return
+        setFavoriteIds(new Set((data || []).map((r) => r.barber_id)))
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [userId])
+
+  const handleToggleFavorite = async (barberId, shouldSave) => {
+    if (!userId || !barberId) return
+    // Optimistic
+    setFavoriteIds((prev) => {
+      const next = new Set(prev)
+      if (shouldSave) next.add(barberId)
+      else next.delete(barberId)
+      return next
+    })
+    if (shouldSave) {
+      const { error } = await supabase
+        .from('favorites')
+        .insert({ customer_id: userId, barber_id: barberId })
+      if (error && error.code !== '23505') {
+        // 23505 = unique violation (already saved) — ignore
+        setFavoriteIds((prev) => {
+          const next = new Set(prev)
+          next.delete(barberId)
+          return next
+        })
+        window.alert(`Couldn't save: ${error.message}`)
+      }
+    } else {
+      const { error } = await supabase
+        .from('favorites')
+        .delete()
+        .eq('customer_id', userId)
+        .eq('barber_id', barberId)
+      if (error) {
+        setFavoriteIds((prev) => {
+          const next = new Set(prev)
+          next.add(barberId)
+          return next
+        })
+        window.alert(`Couldn't remove: ${error.message}`)
+      }
+    }
+  }
 
   const slotsKey =
     barberId && selectedDate
@@ -724,6 +811,8 @@ export default function BookAppointmentPage({ onBack, onOpenSidebar, onNavigate,
             onSelect={setBarberId}
             barbers={barbers}
             loading={barbersLoading}
+            favoriteIds={favoriteIds}
+            onToggleFavorite={handleToggleFavorite}
           />
           <WhenPanel
             selectedBarberName={barber?.fullname || ''}
