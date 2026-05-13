@@ -6970,6 +6970,167 @@
   --surface: #20242c;
 }
 
+/* Customer home panel: keep the interactive controls legible in dark mode */
+[data-theme='dark'] .customer-search,
+[data-theme='dark'] .customer-square-button,
+[data-theme='dark'] .customer-barber-card,
+[data-theme='dark'] .customer-chip,
+[data-theme='dark'] .customer-button-cancel {
+  background: var(--surface);
+  border-color: var(--line);
+}
+
+[data-theme='dark'] .customer-panel-head a {
+  color: var(--accent);
+}
+
+[data-theme='dark'] .customer-button-primary,
+[data-theme='dark'] .customer-button-light,
+[data-theme='dark'] .customer-chip-gold {
+  color: #0f1115;
+}
+
+[data-theme='dark'] .customer-quick-card.is-primary .customer-quick-icon {
+  color: #0f1115;
+}
+
+[data-theme='dark'] .customer-loyalty {
+  color: #0f1115;
+}
+
+[data-theme='dark'] .customer-loyalty-points span,
+[data-theme='dark'] .customer-loyalty p,
+[data-theme='dark'] .customer-progress-labels {
+  color: rgba(15, 17, 21, 0.68);
+}
+
+[data-theme='dark'] .customer-progress {
+  background: rgba(15, 17, 21, 0.12);
+}
+
+[data-theme='dark'] .customer-barber-card small,
+[data-theme='dark'] .customer-visit-info small,
+[data-theme='dark'] .customer-quick-card small,
+[data-theme='dark'] .customer-stat-card span {
+  color: var(--muted-2);
+}
+
+[data-theme='dark'] .customer-search input::placeholder {
+  color: var(--muted);
+}
+
+/* Book Appointment page: keep form cards readable in dark mode */
+[data-theme='dark'] .book-service-card,
+[data-theme='dark'] .book-barber-card,
+[data-theme='dark'] .book-calendar-nav,
+[data-theme='dark'] .book-time,
+[data-theme='dark'] .book-notes,
+[data-theme='dark'] .book-barber-fav {
+  background: var(--surface);
+  border-color: var(--line);
+  color: var(--ink);
+}
+
+[data-theme='dark'] .book-service-card:hover,
+[data-theme='dark'] .book-barber-card:hover,
+[data-theme='dark'] .book-calendar-nav:hover,
+[data-theme='dark'] .book-time:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+[data-theme='dark'] .book-service-card.is-selected,
+[data-theme='dark'] .book-barber-card.is-selected {
+  background: #242830;
+  border-color: var(--accent);
+  color: var(--ink);
+}
+
+[data-theme='dark'] .book-service-card.is-selected .book-service-meta {
+  color: var(--muted-2);
+}
+
+[data-theme='dark'] .book-service-tag {
+  background: rgba(176, 138, 90, 0.16);
+  color: #d8b883;
+}
+
+[data-theme='dark'] .book-service-card.is-selected .book-service-tag,
+[data-theme='dark'] .book-step.is-done .num,
+[data-theme='dark'] .book-step.is-active .num,
+[data-theme='dark'] .book-confirm,
+[data-theme='dark'] .book-barber-fav.is-saved {
+  color: #0f1115;
+}
+
+[data-theme='dark'] .book-barber-avatar {
+  color: #0f1115;
+}
+
+[data-theme='dark'] .book-barber-card.is-wildcard .book-barber-avatar {
+  background: var(--cream-deep);
+  color: var(--muted-2);
+}
+
+[data-theme='dark'] .book-day.is-muted,
+[data-theme='dark'] .book-day.is-disabled,
+[data-theme='dark'] .book-time.is-disabled {
+  color: #68707d;
+}
+
+[data-theme='dark'] .book-day.is-selected,
+[data-theme='dark'] .book-time.is-selected {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #0f1115;
+}
+
+[data-theme='dark'] .book-day.is-selected::after {
+  background: #0f1115;
+}
+
+[data-theme='dark'] .book-notes::placeholder {
+  color: var(--muted);
+}
+
+[data-theme='dark'] .book-summary {
+  color: #0f1115;
+}
+
+[data-theme='dark'] .book-summary-rows,
+[data-theme='dark'] .book-summary-prices {
+  border-bottom-color: rgba(15, 17, 21, 0.12);
+}
+
+[data-theme='dark'] .book-summary-icon {
+  background: rgba(15, 17, 21, 0.08);
+  color: var(--accent-deep);
+}
+
+[data-theme='dark'] .book-summary-rows small {
+  color: rgba(15, 17, 21, 0.55);
+}
+
+[data-theme='dark'] .book-summary-rows strong {
+  color: #0f1115;
+}
+
+[data-theme='dark'] .book-summary-rows em {
+  color: rgba(15, 17, 21, 0.5);
+}
+
+[data-theme='dark'] .book-summary-prices > div {
+  color: rgba(15, 17, 21, 0.78);
+}
+
+[data-theme='dark'] .book-fineprint {
+  color: rgba(15, 17, 21, 0.58);
+}
+
+[data-theme='dark'] .book-confirm:disabled {
+  background: rgba(15, 17, 21, 0.1);
+  color: rgba(15, 17, 21, 0.35);
+}
+
 /* Sidebar and dark-on-light surfaces keep their original tokens */
 [data-theme='dark'] .customer-sidebar,
 [data-theme='dark'] .customer-modal-backdrop,
