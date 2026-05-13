@@ -123,7 +123,6 @@ const itemsByTab = {
       sub: 'Pick a setting to review details and actions on the right.',
       filter: 'account',
       icon: 'globe',
-      iconVariant: 'gold',
       pills: [
         { label: 'English (US)', variant: 'gold' },
         { label: 'USD', variant: 'soft' },
@@ -194,7 +193,6 @@ const itemsByTab = {
       sub: 'Two-step reminders before every booking. Always on for security alerts.',
       filter: 'account',
       icon: 'calendar',
-      iconVariant: 'gold',
       pills: [
         { label: '24h', variant: 'gold' },
         { label: '2h', variant: 'soft' },
@@ -344,7 +342,6 @@ const itemsByTab = {
       sub: 'Used for in-store taps and online bookings.',
       filter: 'account',
       icon: 'card',
-      iconVariant: 'gold',
       pills: [
         { label: 'Primary', variant: 'gold' },
         { label: 'Visa 4821', variant: 'soft' },

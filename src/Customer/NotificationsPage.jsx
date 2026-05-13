@@ -229,7 +229,7 @@ function NotificationRow({ notif, selected, onSelect, onOpen }) {
         }
       }}
     >
-      <span className={`nt-icon${notif.iconVariant === 'gold' ? ' is-gold' : ''}`}>
+      <span className="nt-icon">
         <Icon name={notif.icon} />
       </span>
 
