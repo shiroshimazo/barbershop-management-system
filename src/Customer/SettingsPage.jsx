@@ -1,8 +1,17 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase.js'
 import ConfirmDialog from './ConfirmDialog.jsx'
 import Toast from '../components/Toast.jsx'
 import packageJson from '../../package.json'
+import {
+  emailStatus,
+  formatDate,
+  formatDateTime,
+  formatMoney,
+  tierLabel,
+  toggleText,
+  useCustomerProfile,
+} from './useCustomerProfile.js'
 
 const DEFAULT_TOGGLES = {
   't-region': true,
@@ -40,63 +49,6 @@ const PRESET_TOGGLES = {
 }
 
 const EMPTY_SETTINGS = {}
-
-function tierLabel(tier) {
-  if (!tier) return 'Silver'
-  return tier[0].toUpperCase() + tier.slice(1)
-}
-
-function formatDateTime(iso) {
-  if (!iso) return '-'
-  const date = new Date(iso)
-  if (Number.isNaN(date.getTime())) return '-'
-  return new Intl.DateTimeFormat(undefined, {
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  }).format(date)
-}
-
-function formatDate(iso) {
-  if (!iso) return '-'
-  const date = new Date(iso)
-  if (Number.isNaN(date.getTime())) return '-'
-  return new Intl.DateTimeFormat(undefined, {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  }).format(date)
-}
-
-function formatMoney(cents) {
-  if (typeof cents !== 'number') return '-'
-  return `$${(cents / 100).toFixed(2)}`
-}
-
-function toggleText(value) {
-  return value ? 'On' : 'Off'
-}
-
-function emailStatus(user) {
-  if (user?.email_confirmed_at || user?.confirmed_at) return 'Verified'
-  return 'Needs confirmation'
-}
-
-function mapCustomerRow(data, session) {
-  const settings = data?.settings && typeof data.settings === 'object' ? data.settings : {}
-  return {
-    id: data?.id || session?.user?.id || '',
-    name: data?.fullname || session?.user?.email?.split('@')[0] || '',
-    email: data?.email || session?.user?.email || '',
-    phone: data?.phone || '',
-    tier: data?.tier || 'silver',
-    loyaltyPoints: data?.loyalty_points || 0,
-    memberSince: data?.member_since || data?.created_at || session?.user?.created_at || null,
-    updatedAt: data?.updated_at || null,
-    settings,
-  }
-}
 
 const tabs = [
   { id: 'general', label: 'General', count: 6 },
@@ -156,8 +108,8 @@ const itemsByTab = {
       detail: {
         title: 'Quick rebook behavior',
         sub: 'How "Quick rebook" handles your defaults.',
-        a: 'Default barber: Jordan Tate',
-        b: 'Default service: Classic Fade + Beard Trim',
+        a: 'Default barber: Live preference',
+        b: 'Default service: Live preference',
         c: 'Auto-pick next available slot',
         d: 'Confirm before booking',
         primary: 'Tune quick rebook',
@@ -328,7 +280,7 @@ const itemsByTab = {
         a: 'Alerts: On',
         b: 'Channels: in-app + email',
         c: 'Quiet hours bypassed',
-        d: 'Last sign-in: 2 days ago',
+        d: 'Last sign-in: Current session',
         primary: 'Review devices',
         secondary: 'Change password',
       },
@@ -343,17 +295,17 @@ const itemsByTab = {
       filter: 'account',
       icon: 'card',
       pills: [
-        { label: 'Primary', variant: 'gold' },
-        { label: 'Visa 4821', variant: 'soft' },
+        { label: 'Not configured', variant: 'soft' },
+        { label: 'Receipts available', variant: 'soft' },
       ],
       toggleId: 't-card',
       detail: {
         title: 'Payment method',
-        sub: 'Primary card on file.',
-        a: 'Visa •••• 4821',
-        b: 'Expires 08/28',
-        c: 'Primary: Yes',
-        d: 'Backup: —',
+        sub: 'Payment card storage is optional.',
+        a: 'No saved card',
+        b: 'Payment table: Not configured',
+        c: 'Primary: No',
+        d: 'Backup: None',
         primary: 'Manage cards',
         secondary: 'Add a card',
       },
@@ -670,7 +622,7 @@ function SettingItem({ item, selected, onSelect, toggleState, onToggle, theme })
         }
       }}
     >
-      <span className={`st-item-icon${item.iconVariant === 'gold' ? ' is-gold' : ''}`}>
+      <span className="st-item-icon">
         <Icon name={item.icon} />
       </span>
       <div className="st-item-body">
@@ -826,15 +778,14 @@ export default function SettingsPage({
   session,
 }) {
   const userId = session?.user?.id
-  const [customer, setCustomer] = useState(() => mapCustomerRow(null, session))
-  const [settingsFacts, setSettingsFacts] = useState({
-    favoriteBarber: null,
-    latestVisit: null,
-    nextAppointment: null,
-    visitsCount: 0,
-    upcomingCount: 0,
-  })
-  const [factsRefresh, setFactsRefresh] = useState(0)
+  const {
+    customer,
+    setCustomer,
+    facts: settingsFacts,
+    customerError,
+    customerLoading,
+    factsError,
+  } = useCustomerProfile(session)
   const [activeTab, setActiveTab] = useState('general')
   const [activeChip, setActiveChip] = useState('all')
   const [query, setQuery] = useState('')
@@ -854,129 +805,6 @@ export default function SettingsPage({
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [deleteConfirmEmail, setDeleteConfirmEmail] = useState('')
   const [deleteSaving, setDeleteSaving] = useState(false)
-  const applyCustomerRow = useCallback(
-    (data) => {
-      const nextCustomer = mapCustomerRow(data, session)
-      const settings = nextCustomer.settings || {}
-      setCustomer(nextCustomer)
-      if (settings.toggles && typeof settings.toggles === 'object') {
-        setToggles({ ...DEFAULT_TOGGLES, ...settings.toggles })
-      }
-      if (typeof settings.preset === 'string') {
-        setPreset(settings.preset)
-      }
-    },
-    [session],
-  )
-
-  useEffect(() => {
-    if (!userId) return undefined
-    let cancelled = false
-    supabase
-      .from('customers')
-      .select('id, fullname, email, phone, tier, loyalty_points, member_since, updated_at, settings')
-      .eq('id', userId)
-      .single()
-      .then(({ data, error }) => {
-        if (cancelled) return
-        if (error) {
-          setToast(`Couldn't load settings: ${error.message}`)
-          return
-        }
-        if (data) applyCustomerRow(data)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [userId, applyCustomerRow])
-
-  useEffect(() => {
-    if (!userId) return undefined
-    let cancelled = false
-
-    Promise.all([
-      supabase
-        .from('favorites')
-        .select('barber:barbers ( id, fullname, specialty, location )')
-        .eq('customer_id', userId)
-        .order('created_at', { ascending: true })
-        .limit(1),
-      supabase
-        .from('visits')
-        .select(
-          'id, service, visited_at, location, price_cents, rating, barber:barbers ( fullname, location )',
-          { count: 'exact' },
-        )
-        .eq('customer_id', userId)
-        .order('visited_at', { ascending: false })
-        .limit(1),
-      supabase
-        .from('appointments')
-        .select(
-          'id, service, scheduled_at, duration_minutes, location, price_cents, status, barber:barbers ( fullname, location )',
-          { count: 'exact' },
-        )
-        .eq('customer_id', userId)
-        .eq('status', 'scheduled')
-        .gte('scheduled_at', new Date().toISOString())
-        .order('scheduled_at', { ascending: true })
-        .limit(1),
-    ]).then(([favoriteRes, visitsRes, upcomingRes]) => {
-      if (cancelled) return
-
-      setSettingsFacts({
-        favoriteBarber: favoriteRes.data?.[0]?.barber || null,
-        latestVisit: visitsRes.data?.[0] || null,
-        nextAppointment: upcomingRes.data?.[0] || null,
-        visitsCount: visitsRes.count || 0,
-        upcomingCount: upcomingRes.count || 0,
-      })
-    })
-
-    return () => {
-      cancelled = true
-    }
-  }, [userId, factsRefresh])
-
-  useEffect(() => {
-    if (!userId) return undefined
-
-    const channel = supabase
-      .channel(`customer-settings-${userId}`)
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'customers', filter: `id=eq.${userId}` },
-        (payload) => {
-          if (payload.new) applyCustomerRow(payload.new)
-        },
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'appointments', filter: `customer_id=eq.${userId}` },
-        () => {
-          setFactsRefresh((tick) => tick + 1)
-        },
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'visits', filter: `customer_id=eq.${userId}` },
-        () => {
-          setFactsRefresh((tick) => tick + 1)
-        },
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'favorites', filter: `customer_id=eq.${userId}` },
-        () => {
-          setFactsRefresh((tick) => tick + 1)
-        },
-      )
-      .subscribe()
-
-    return () => {
-      supabase.removeChannel(channel)
-    }
-  }, [userId, applyCustomerRow])
 
   const settings = customer.settings || EMPTY_SETTINGS
   const latestVisit = settingsFacts.latestVisit
@@ -984,6 +812,9 @@ export default function SettingsPage({
   const favoriteBarber = settingsFacts.favoriteBarber
   const emailState = emailStatus(session?.user)
   const lastSignIn = formatDateTime(session?.user?.last_sign_in_at)
+  const activeSessionCount = session?.user ? 1 : 0
+  const activeSessionText =
+    activeSessionCount === 1 ? '1 current session' : 'No active session'
   const deliveryRuleCount = ['t-reminders', 't-pdf', 't-quiet'].filter((id) => toggles[id]).length
   const defaultBarber =
     settings.default_barber ||
@@ -996,6 +827,25 @@ export default function SettingsPage({
   const quietHours = settings.quiet_hours || '10:00 PM - 8:00 AM'
   const exportRange = settings.export_range || 'last 12 months'
   const defaultTip = settings.default_tip_percent ? `${settings.default_tip_percent}%` : 'Not saved'
+
+  useEffect(() => {
+    if (customerLoading) return
+    const savedToggles =
+      settings.toggles && typeof settings.toggles === 'object' ? settings.toggles : null
+    queueMicrotask(() => {
+      setToggles({ ...DEFAULT_TOGGLES, ...(savedToggles || {}) })
+      setPreset(settings.preset || 'Standard')
+      setDirty(false)
+    })
+  }, [customerLoading, settings.preset, settings.toggles])
+
+  useEffect(() => {
+    const message = customerError || factsError
+    if (!message) return
+    queueMicrotask(() => {
+      setToast(`Couldn't load live settings: ${message}`)
+    })
+  }, [customerError, factsError])
 
   const liveItemsByTab = useMemo(() => {
     const nextBookingText = nextAppointment
@@ -1159,6 +1009,7 @@ export default function SettingsPage({
                 { label: 'Alerts', value: toggleText(toggles['t-alerts']) },
                 { label: 'Channels', value: customer.email ? 'In-app + email' : 'In-app only' },
                 { label: 'Last sign-in', value: lastSignIn },
+                { label: 'Known sessions', value: activeSessionText },
                 { label: 'Email status', value: emailState },
               ],
             },
@@ -1268,13 +1119,25 @@ export default function SettingsPage({
     settingsFacts.visitsCount,
     theme,
     toggles,
+    activeSessionText,
   ])
 
   const liveStats = [
-    { id: 'tier', icon: 'star', value: tierLabel(customer.tier), label: 'Member tier', variant: 'gold' },
+    {
+      id: 'tier',
+      icon: 'star',
+      value: customerLoading ? 'Loading…' : tierLabel(customer.tier),
+      label: 'Member tier',
+      variant: 'gold',
+    },
     { id: 'delivery', icon: 'bell', value: deliveryRuleCount, label: 'Delivery rules' },
     { id: 'privacy', icon: 'shield', value: preset, label: 'Privacy posture' },
-    { id: 'sessions', icon: 'device', value: '1', label: 'Active session' },
+    {
+      id: 'sessions',
+      icon: 'device',
+      value: activeSessionCount,
+      label: activeSessionCount === 1 ? 'Active session' : 'Active sessions',
+    },
   ]
 
   const items = liveItemsByTab[activeTab]
@@ -1312,7 +1175,9 @@ export default function SettingsPage({
 
   const onToggle = (id, value) => {
     if (id === 'theme') {
-      onThemeChange(theme === 'dark' ? 'light' : 'dark')
+      const nextTheme = theme === 'dark' ? 'light' : 'dark'
+      onThemeChange(nextTheme)
+      void saveSettingPatch({ theme: nextTheme }, 'Theme preference saved.')
       return
     }
     setToggles((prev) => ({ ...prev, [id]: value }))
@@ -1349,17 +1214,29 @@ export default function SettingsPage({
   }
 
   const saveSettingPatch = async (patch, message) => {
-    if (!userId) return
+    if (!userId) {
+      setToast('Sign in to save settings.')
+      return false
+    }
     const { error } = await supabase.rpc('merge_settings', { patch })
     if (error) {
       setToast(`Couldn't save setting: ${error.message}`)
-      return
+      return false
     }
+    if (patch.toggles && typeof patch.toggles === 'object') {
+      setToggles({ ...DEFAULT_TOGGLES, ...patch.toggles })
+    }
+    if (patch.preset) setPreset(patch.preset)
     mergeLocalSettings(patch)
     setToast(message)
+    return true
   }
 
   const persistToggles = async (nextToggles, message) => {
+    if (!userId) {
+      setToast('Sign in to save settings.')
+      return
+    }
     setToggles(nextToggles)
     const { error } = await supabase.rpc('merge_settings', {
       patch: {
@@ -1373,6 +1250,7 @@ export default function SettingsPage({
       setToast(`Couldn't save setting: ${error.message}`)
       return
     }
+    mergeLocalSettings({ toggles: nextToggles, preset, theme })
     setDirty(false)
     setToast(message)
   }
@@ -1403,12 +1281,12 @@ export default function SettingsPage({
       return
     }
     if (item.id === 'reminders' && kind === 'secondary') {
-      setToast('Test reminder sent to your inbox.')
-      supabase.rpc('create_test_notification').then(({ error }) => {
-        if (error) {
-          setToast(`Couldn't send test notification: ${error.message}`)
-        }
-      })
+      const { error } = await supabase.rpc('create_test_notification')
+      setToast(
+        error
+          ? `Couldn't send test notification: ${error.message}`
+          : 'Test reminder added to Notifications.',
+      )
       return
     }
     if (item.id === 'reminders' && kind === 'primary') {
@@ -1460,11 +1338,25 @@ export default function SettingsPage({
         setToast(error ? `Couldn't send reset email: ${error.message}` : 'Password reset email sent.')
         return
       }
-      setToast(`Last sign-in: ${lastSignIn}. Active sessions: 1 current session.`)
+      setDangerOpen(true)
+      setToast(`Current Supabase session: ${activeSessionText}. Last sign-in: ${lastSignIn}.`)
       return
     }
     if (item.id === 'card') {
-      setToast('No payment method table is configured yet. Receipts still use your visit history.')
+      if (kind === 'secondary') {
+        await persistToggles(
+          { ...toggles, 't-card': false },
+          'Payment method shortcuts disabled. Receipts still use visit history.',
+        )
+        return
+      }
+      await saveSettingPatch(
+        {
+          payment_method_status: 'not_configured',
+          toggles: { ...toggles, 't-card': true },
+        },
+        'Payment preference saved. Card storage is not configured yet.',
+      )
       return
     }
     if (item.id === 'tip') {

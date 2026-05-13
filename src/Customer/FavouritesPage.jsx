@@ -291,7 +291,7 @@ function DetailPanel({
   const sub = isBarber
     ? `${barber?.role} · ${barber?.location}`
     : `${service?.duration} · $${service?.price}`
-  const slots = isBarber && barber ? barber.slots : ['10:30 AM', '12:00 PM', '3:15 PM']
+  const slots = isBarber && barber ? barber.slots : []
 
   const rating = isBarber && barber ? `★ ${barber.rating.toFixed(1)}` : '—'
   const focus = isBarber
@@ -338,23 +338,25 @@ function DetailPanel({
         <div className="fav-field">
           <span className="fav-field-label">Day</span>
           <div className="fav-field-value">
-            <span>Next available</span>
+            <span>{isBarber ? 'Next available' : 'Choose in Book Appointment'}</span>
             <Icon name="arrow" />
           </div>
         </div>
 
-        <div className="fav-slot-row">
-          {slots.map((slot) => (
-            <button
-              className={`fav-slot${selectedSlot === slot ? ' is-active' : ''}`}
-              key={slot}
-              type="button"
-              onClick={() => onSlot(slot)}
-            >
-              {slot}
-            </button>
-          ))}
-        </div>
+        {isBarber && (
+          <div className="fav-slot-row">
+            {slots.map((slot) => (
+              <button
+                className={`fav-slot${selectedSlot === slot ? ' is-active' : ''}`}
+                key={slot}
+                type="button"
+                onClick={() => onSlot(slot)}
+              >
+                {slot}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="fav-detail-actions">
@@ -378,15 +380,20 @@ function DetailPanel({
       </div>
 
       <p className="fav-note">
-        Prototype note: the &ldquo;Swap&rdquo; action is a quick picker between saved services
-        (right now it toggles to the selected service in the Services tab).
+        Book this opens Book Appointment with this favourite prefilled; live availability is
+        checked there before confirmation.
       </p>
     </aside>
   )
 }
 
 export default function FavouritesPage({ onOpenSidebar, onNavigate, session }) {
-  const { services: catalogServices } = useServices()
+  const {
+    services: catalogServices,
+    loading: servicesLoading,
+    error: servicesError,
+    usingFallback: servicesUsingFallback,
+  } = useServices()
   const [activeTab, setActiveTab] = useState('barbers')
   const [activeChip, setActiveChip] = useState('all')
   const [query, setQuery] = useState('')
@@ -399,12 +406,30 @@ export default function FavouritesPage({ onOpenSidebar, onNavigate, session }) {
   const [pendingRemove, setPendingRemove] = useState(null)
   const [toast, setToast] = useState('')
   const [refreshTick, setRefreshTick] = useState(0)
+  const [loading, setLoading] = useState(Boolean(session?.user?.id))
+  const [error, setError] = useState('')
 
   const userId = session?.user?.id
 
   useEffect(() => {
-    if (!userId) return undefined
     let cancelled = false
+    if (!userId) {
+      queueMicrotask(() => {
+        if (cancelled) return
+        setBarbers([])
+        setTier('silver')
+        setLoading(false)
+        setError('')
+      })
+      return () => {
+        cancelled = true
+      }
+    }
+    queueMicrotask(() => {
+      if (cancelled) return
+      setLoading(true)
+      setError('')
+    })
     Promise.all([
       supabase
         .from('favorites')
@@ -418,18 +443,51 @@ export default function FavouritesPage({ onOpenSidebar, onNavigate, session }) {
         .select('tier')
         .eq('id', userId)
         .single(),
-    ]).then(([favRes, custRes]) => {
-      if (cancelled) return
-      const rows = (favRes.data || [])
-        .filter((r) => r.barber)
-        .map((r, idx) => mapBarber(r.barber, idx))
-      setBarbers(rows)
-      setTier(custRes.data?.tier || 'silver')
-    })
+    ])
+      .then(([favRes, custRes]) => {
+        if (cancelled) return
+        const rows = (favRes.data || [])
+          .filter((r) => r.barber)
+          .map((r, idx) => mapBarber(r.barber, idx))
+        setBarbers(rows)
+        setTier(custRes.data?.tier || 'silver')
+        setError(favRes.error?.message || '')
+        if (custRes.error) {
+          setToast(`Couldn't load member tier: ${custRes.error.message}`)
+        }
+        setLoading(false)
+      })
+      .catch((err) => {
+        if (cancelled) return
+        setBarbers([])
+        setError(err.message || 'Unable to load favourites.')
+        setLoading(false)
+      })
     return () => {
       cancelled = true
     }
   }, [userId, refreshTick])
+
+  useEffect(() => {
+    if (!userId) return undefined
+    const channel = supabase
+      .channel(`customer-favourites-${userId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'favorites', filter: `customer_id=eq.${userId}` },
+        () => setRefreshTick((tick) => tick + 1),
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'customers', filter: `id=eq.${userId}` },
+        () => setRefreshTick((tick) => tick + 1),
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [userId])
 
   const handleRemoveRequest = (barberId) => {
     const target = barbers.find((b) => b.id === barberId)
@@ -500,9 +558,9 @@ export default function FavouritesPage({ onOpenSidebar, onNavigate, session }) {
   }
 
   const handleSwap = () => {
-    if (activeTab === 'barbers') {
-      setActiveTab('services')
-    }
+    setActiveTab((tab) => (tab === 'barbers' ? 'services' : 'barbers'))
+    setActiveChip('all')
+    setQuery('')
   }
 
   const goBook = (selection) => {
@@ -522,9 +580,11 @@ export default function FavouritesPage({ onOpenSidebar, onNavigate, session }) {
   }
 
   const isBarberView = activeTab === 'barbers'
+  const listLoading = isBarberView ? loading : servicesLoading
+  const listError = isBarberView ? error : servicesError
   const showEmpty = isBarberView
-    ? visibleBarbers.length === 0
-    : visibleServices.length === 0
+    ? !listLoading && visibleBarbers.length === 0
+    : !listLoading && visibleServices.length === 0
 
   const defaultPickFirst = selectedBarber?.name?.split(' ')[0] || '—'
   const tierLabel = tier ? tier[0].toUpperCase() + tier.slice(1) : 'Silver'
@@ -600,7 +660,16 @@ export default function FavouritesPage({ onOpenSidebar, onNavigate, session }) {
           </p>
         </div>
         <div className="fav-head-actions">
-          <button className="fav-btn fav-btn-dark" type="button">
+          <button
+            className="fav-btn fav-btn-dark"
+            type="button"
+            onClick={() => {
+              setActiveTab('barbers')
+              setActiveChip('all')
+              setQuery('')
+              setToast('Use Book or Remove on any saved barber to manage favourites.')
+            }}
+          >
             <Icon name="sliders" />
             Manage
           </button>
@@ -661,7 +730,12 @@ export default function FavouritesPage({ onOpenSidebar, onNavigate, session }) {
               {chip.label}
             </button>
           ))}
-          <button className="fav-chip fav-chip-filter" type="button">
+          <button
+            className={`fav-chip fav-chip-filter${activeChip === 'filters' ? ' is-active' : ''}`}
+            type="button"
+            onClick={() => setActiveChip((chip) => (chip === 'filters' ? 'all' : 'filters'))}
+            disabled={!isBarberView}
+          >
             <Icon name="filter" />
             Filters
           </button>
@@ -693,7 +767,13 @@ export default function FavouritesPage({ onOpenSidebar, onNavigate, session }) {
             </p>
           </div>
 
-          {showEmpty ? (
+          {listLoading ? (
+            <div className="fav-empty">
+              {isBarberView ? 'Loading saved barbers...' : 'Loading service catalog...'}
+            </div>
+          ) : listError && isBarberView ? (
+            <div className="fav-empty">Live favourites could not load: {listError}</div>
+          ) : showEmpty ? (
             <div className="fav-empty">
               {isBarberView
                 ? barbers.length === 0
@@ -716,17 +796,25 @@ export default function FavouritesPage({ onOpenSidebar, onNavigate, session }) {
               ))}
             </div>
           ) : (
-            <div className="fav-svc-grid">
-              {visibleServices.map((service) => (
-                <ServiceCard
-                  key={service.id}
-                  service={service}
-                  selected={service.id === effectiveServiceId}
-                  onSelect={setSelectedServiceId}
-                  onBook={goBook}
-                />
-              ))}
-            </div>
+            <>
+              {listError && (
+                <div className="fav-empty">
+                  Live services could not load: {listError}
+                  {servicesUsingFallback ? ' Showing local services.' : ''}
+                </div>
+              )}
+              <div className="fav-svc-grid">
+                {visibleServices.map((service) => (
+                  <ServiceCard
+                    key={service.id}
+                    service={service}
+                    selected={service.id === effectiveServiceId}
+                    onSelect={setSelectedServiceId}
+                    onBook={goBook}
+                  />
+                ))}
+              </div>
+            </>
           )}
         </div>
 

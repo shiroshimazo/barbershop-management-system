@@ -597,7 +597,7 @@ export default function NotificationsPage({
       <div className="nt-stats">
         {stats.map((stat) => (
           <article className="nt-stat" key={stat.id}>
-            <span className={`nt-stat-icon${stat.variant === 'gold' ? ' is-gold' : ''}`}>
+            <span className="nt-stat-icon">
               <Icon name={stat.icon} />
             </span>
             <div>

@@ -81,7 +81,9 @@ function isPastTimeSlot(date, slot, now = new Date()) {
   return scheduledAt ? scheduledAt <= now : false
 }
 
-const timeGroups = [
+// Until a barber availability table exists, use shop hours and disable slots
+// that are already booked or have passed for the selected day.
+const FALLBACK_TIME_GROUPS = [
   {
     label: 'Morning',
     slots: ['9:00 AM', '9:45 AM', '10:30 AM', '11:15 AM', '12:00 PM', '12:45 PM'],
@@ -92,7 +94,7 @@ const timeGroups = [
       { time: '1:30 PM' },
       { time: '2:15 PM' },
       { time: '2:30 PM' },
-      { time: '3:00 PM', disabled: true },
+      { time: '3:00 PM' },
       { time: '3:45 PM' },
       { time: '4:30 PM' },
     ],
@@ -172,7 +174,7 @@ function Stepper({ currentStep }) {
   )
 }
 
-function ServicePanel({ selected, onSelect, services, loading }) {
+function ServicePanel({ selected, onSelect, services, loading, error, usingFallback }) {
   return (
     <section className="book-panel" aria-labelledby="book-service-heading">
       <header className="book-panel-head">
@@ -183,8 +185,16 @@ function ServicePanel({ selected, onSelect, services, loading }) {
         </div>
       </header>
 
+      {error && (
+        <p className="book-error">Live services could not load: {error}</p>
+      )}
+      {usingFallback && !loading && (
+        <p className="book-loading">Using the local service list until Supabase services respond.</p>
+      )}
       {loading ? (
         <p className="book-loading">Loading services...</p>
+      ) : services.length === 0 ? (
+        <p className="book-loading">No services are available right now.</p>
       ) : (
         <div className="book-service-grid">
           {services.map((svc) => (
@@ -220,6 +230,7 @@ function BarberPanel({
   onSelect,
   barbers,
   loading,
+  error,
   favoriteIds,
   onToggleFavorite,
 }) {
@@ -235,6 +246,8 @@ function BarberPanel({
 
       {loading ? (
         <p className="book-loading">Loading barbers...</p>
+      ) : error ? (
+        <p className="book-error">Live barbers could not load: {error}</p>
       ) : barbers.length === 0 ? (
         <p className="book-loading">No barbers available right now.</p>
       ) : (
@@ -297,6 +310,8 @@ function WhenPanel({
   onNextMonth,
   canGoBack,
   takenSlots,
+  takenSlotsLoading,
+  takenSlotsError,
   now,
 }) {
   return (
@@ -370,8 +385,18 @@ function WhenPanel({
           </div>
         </div>
 
+        {takenSlotsError && (
+          <p className="book-error">Availability check failed: {takenSlotsError}</p>
+        )}
+        {takenSlotsLoading && (
+          <p className="book-loading">Checking booked times...</p>
+        )}
+        {!selectedBarberName && (
+          <p className="book-loading">Pick a barber before selecting a time.</p>
+        )}
+
         <div className="book-times" aria-label="Available times">
-          {timeGroups.map((group) => (
+          {FALLBACK_TIME_GROUPS.map((group) => (
             <div className="book-time-group" key={group.label}>
               <p className="book-time-label">{group.label}</p>
               <div className="book-time-grid">
@@ -380,8 +405,22 @@ function WhenPanel({
                   const presetDisabled = typeof slot === 'object' && slot.disabled
                   const taken = takenSlots?.has(time)
                   const past = isPastTimeSlot(selectedDate, time, now)
-                  const disabled = presetDisabled || taken || past
+                  const missingBarber = !selectedBarberName
+                  const missingDate = !selectedDate
+                  const disabled =
+                    presetDisabled || taken || past || missingBarber || missingDate || takenSlotsLoading
                   const isSelected = time === selectedTime
+                  const title = missingBarber
+                    ? 'Pick a barber first'
+                    : missingDate
+                      ? 'Pick a date first'
+                      : takenSlotsLoading
+                        ? 'Checking availability'
+                        : taken
+                          ? 'Already booked'
+                          : past
+                            ? 'Time has passed'
+                            : undefined
                   return (
                     <button
                       className={`book-time${isSelected ? ' is-selected' : ''}${
@@ -391,7 +430,7 @@ function WhenPanel({
                       type="button"
                       disabled={disabled}
                       onClick={() => onSelectTime(time)}
-                      title={taken ? 'Already booked' : past ? 'Time has passed' : undefined}
+                      title={title}
                     >
                       {time}
                     </button>
@@ -515,7 +554,12 @@ export default function BookAppointmentPage({
   onAppointmentsChange,
   session,
 }) {
-  const { services, loading: servicesLoading } = useServices()
+  const {
+    services,
+    loading: servicesLoading,
+    error: servicesError,
+    usingFallback: servicesUsingFallback,
+  } = useServices()
   const [serviceId, setServiceId] = useState(
     () => readBookingDraft()?.serviceId || readBookingDraft()?.serviceSlug || readBookingDraft()?.serviceName || 'classic-fade-beard',
   )
@@ -528,8 +572,11 @@ export default function BookAppointmentPage({
 
   const [barbers, setBarbers] = useState([])
   const [barbersLoading, setBarbersLoading] = useState(true)
+  const [barbersError, setBarbersError] = useState('')
   const [takenSlotsData, setTakenSlotsData] = useState(new Set())
   const [takenSlotsKey, setTakenSlotsKey] = useState('')
+  const [takenSlotsLoading, setTakenSlotsLoading] = useState(false)
+  const [takenSlotsError, setTakenSlotsError] = useState('')
   const [favoriteIds, setFavoriteIds] = useState(new Set())
   const [toast, setToast] = useState('')
   const userId = session?.user?.id
@@ -564,9 +611,21 @@ export default function BookAppointmentPage({
       .select('id, fullname, initials, specialty, location, rating, review_count')
       .eq('active', true)
       .order('rating', { ascending: false })
-      .then(({ data }) => {
+      .then(({ data, error }) => {
         if (cancelled) return
+        if (error) {
+          setBarbers([])
+          setBarbersError(error.message)
+          setBarbersLoading(false)
+          return
+        }
         setBarbers(data || [])
+        setBarbersLoading(false)
+      })
+      .catch((error) => {
+        if (cancelled) return
+        setBarbers([])
+        setBarbersError(error.message || 'Unable to load barbers.')
         setBarbersLoading(false)
       })
     return () => {
@@ -637,8 +696,24 @@ export default function BookAppointmentPage({
 
   // Fetch taken slots for selected barber+day
   useEffect(() => {
-    if (!slotsKey || !barberId || !selectedDate) return undefined
     let cancelled = false
+    if (!slotsKey || !barberId || !selectedDate) {
+      queueMicrotask(() => {
+        if (cancelled) return
+        setTakenSlotsData(new Set())
+        setTakenSlotsKey('')
+        setTakenSlotsLoading(false)
+        setTakenSlotsError('')
+      })
+      return () => {
+        cancelled = true
+      }
+    }
+    queueMicrotask(() => {
+      if (cancelled) return
+      setTakenSlotsLoading(true)
+      setTakenSlotsError('')
+    })
     const dayStart = new Date(selectedDate)
     dayStart.setHours(0, 0, 0, 0)
     const dayEnd = new Date(selectedDate)
@@ -651,8 +726,15 @@ export default function BookAppointmentPage({
       .eq('status', 'scheduled')
       .gte('scheduled_at', dayStart.toISOString())
       .lte('scheduled_at', dayEnd.toISOString())
-      .then(({ data }) => {
+      .then(({ data, error }) => {
         if (cancelled) return
+        if (error) {
+          setTakenSlotsData(new Set())
+          setTakenSlotsKey(slotsKey)
+          setTakenSlotsError(error.message)
+          setTakenSlotsLoading(false)
+          return
+        }
         const slotSet = new Set()
         ;(data || []).forEach((row) => {
           const d = new Date(row.scheduled_at)
@@ -665,6 +747,14 @@ export default function BookAppointmentPage({
         })
         setTakenSlotsData(slotSet)
         setTakenSlotsKey(slotsKey)
+        setTakenSlotsLoading(false)
+      })
+      .catch((error) => {
+        if (cancelled) return
+        setTakenSlotsData(new Set())
+        setTakenSlotsKey(slotsKey)
+        setTakenSlotsError(error.message || 'Unable to check availability.')
+        setTakenSlotsLoading(false)
       })
     return () => {
       cancelled = true
@@ -704,9 +794,20 @@ export default function BookAppointmentPage({
 
   useEffect(() => {
     if (selectedTime && isPastTimeSlot(selectedDate, selectedTime, now)) {
-      setSelectedTime(null)
+      queueMicrotask(() => setSelectedTime(null))
     }
   }, [selectedDate, selectedTime, now])
+
+  useEffect(() => {
+    if (
+      selectedTime &&
+      slotsKey &&
+      takenSlotsKey === slotsKey &&
+      takenSlotsData.has(selectedTime)
+    ) {
+      queueMicrotask(() => setSelectedTime(null))
+    }
+  }, [selectedTime, slotsKey, takenSlotsData, takenSlotsKey])
 
   const handleSelectDay = (day, label, date) => {
     setSelectedDay(day)
@@ -733,6 +834,14 @@ export default function BookAppointmentPage({
 
   const handleConfirm = async () => {
     if (!isReady || submitState.status === 'saving') return
+    if (takenSlotsLoading) {
+      setSubmitState({ status: 'error', message: 'Wait for availability to finish checking.' })
+      return
+    }
+    if (takenSlots.has(selectedTime)) {
+      setSubmitState({ status: 'error', message: 'That time was just booked. Pick another slot.' })
+      return
+    }
     const scheduledAt = buildScheduledAt(selectedDate, selectedTime)
     if (!scheduledAt || scheduledAt < new Date()) {
       setSubmitState({ status: 'error', message: 'Pick a time in the future.' })
@@ -815,12 +924,15 @@ export default function BookAppointmentPage({
             onSelect={setServiceId}
             services={services}
             loading={servicesLoading}
+            error={servicesError}
+            usingFallback={servicesUsingFallback}
           />
           <BarberPanel
             selected={barberId}
             onSelect={setBarberId}
             barbers={barbers}
             loading={barbersLoading}
+            error={barbersError}
             favoriteIds={favoriteIds}
             onToggleFavorite={handleToggleFavorite}
           />
@@ -837,6 +949,8 @@ export default function BookAppointmentPage({
             onNextMonth={handleNextMonth}
             canGoBack={canGoBack}
             takenSlots={takenSlots}
+            takenSlotsLoading={takenSlotsLoading}
+            takenSlotsError={takenSlotsError}
             now={now}
           />
           <NotesPanel value={notes} onChange={setNotes} />

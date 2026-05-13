@@ -1,79 +1,18 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase.js'
 import Toast from '../components/Toast.jsx'
-
-function tierLabel(tier) {
-  if (!tier) return 'Silver'
-  return tier[0].toUpperCase() + tier.slice(1)
-}
-
-function memberIdFrom(uuid) {
-  if (!uuid) return '-'
-  const clean = uuid.replace(/-/g, '').toUpperCase()
-  return `BLC-${clean.slice(0, 4)}-${clean.slice(4, 7)}`
-}
-
-function formatMemberSince(iso) {
-  if (!iso) return '-'
-  return new Date(iso).getFullYear().toString()
-}
-
-function formatDateTime(iso) {
-  if (!iso) return '-'
-  const date = new Date(iso)
-  if (Number.isNaN(date.getTime())) return '-'
-  return new Intl.DateTimeFormat(undefined, {
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  }).format(date)
-}
-
-function formatDate(iso) {
-  if (!iso) return '-'
-  const date = new Date(iso)
-  if (Number.isNaN(date.getTime())) return '-'
-  return new Intl.DateTimeFormat(undefined, {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  }).format(date)
-}
-
-function formatMoney(cents) {
-  if (typeof cents !== 'number') return '-'
-  return `$${(cents / 100).toFixed(2)}`
-}
-
-function valueOrEmpty(value, fallback = 'Not added') {
-  return value == null || value === '' ? fallback : value
-}
-
-function toggleText(value) {
-  return value ? 'On' : 'Off'
-}
-
-function mapCustomerRow(data, session) {
-  const settings = data?.settings && typeof data.settings === 'object' ? data.settings : {}
-  return {
-    id: data?.id || session?.user?.id || '',
-    name: data?.fullname || session?.user?.email?.split('@')[0] || '',
-    email: data?.email || session?.user?.email || '',
-    phone: data?.phone || '',
-    location: settings.preferred_location || 'Downtown',
-    tier: data?.tier || 'silver',
-    loyaltyPoints: data?.loyalty_points || 0,
-    memberSince: data?.member_since || data?.created_at || session?.user?.created_at || null,
-    updatedAt: data?.updated_at || null,
-    settings,
-  }
-}
-
-function emailStatus(user) {
-  if (user?.email_confirmed_at || user?.confirmed_at) return 'Verified'
-  return 'Needs confirmation'
-}
+import {
+  emailStatus,
+  formatDate,
+  formatDateTime,
+  formatMemberSince,
+  formatMoney,
+  memberIdFrom,
+  tierLabel,
+  toggleText,
+  useCustomerProfile,
+  valueOrEmpty,
+} from './useCustomerProfile.js'
 
 const tabs = [
   { id: 'overview', label: 'Overview' },
@@ -86,58 +25,22 @@ const kvFields = [
   {
     id: 'kv-name',
     label: 'FULL NAME',
-    value: 'Marcus R.',
     badge: 'EDIT',
-    detail: {
-      title: 'Full name',
-      subtitle: 'Display name on receipts and reminders',
-      a: 'Marcus R.',
-      b: '—',
-      c: 'Last updated: today',
-      d: '—',
-    },
   },
   {
     id: 'kv-email',
     label: 'EMAIL',
-    value: 'marcus.r@example.com',
     badge: 'VERIFIED',
-    detail: {
-      title: 'Email',
-      subtitle: 'For confirmations',
-      a: 'marcus.r@example.com',
-      b: '—',
-      c: 'Verified',
-      d: '—',
-    },
   },
   {
     id: 'kv-phone',
     label: 'PHONE',
-    value: '+1 (415) 555-0148',
     badge: 'SMS',
-    detail: {
-      title: 'Phone',
-      subtitle: 'For SMS reminders',
-      a: '+1 (415) 555-0148',
-      b: '—',
-      c: 'SMS enabled',
-      d: '—',
-    },
   },
   {
     id: 'kv-id',
     label: 'MEMBER ID',
-    value: 'BLC-0812-774',
     badge: 'COPY',
-    detail: {
-      title: 'Member ID',
-      subtitle: 'Your Blade & Co. customer reference',
-      a: 'BLC-0812-774',
-      b: '—',
-      c: 'Tap to copy',
-      d: '—',
-    },
   },
 ]
 
@@ -147,15 +50,15 @@ const overviewDefaults = [
     title: 'Default barber',
     desc: 'Used when you hit "Quick rebook" — turn off to choose every time.',
     pills: [
-      { label: 'Jordan Tate', variant: 'gold' },
-      { label: 'Downtown', variant: 'soft' },
+      { label: 'Not set', variant: 'soft' },
+      { label: 'Quick rebook', variant: 'soft' },
     ],
     toggle: 't-defaultBarber',
     detail: {
       title: 'Default barber',
       subtitle: 'Used when you hit "Quick rebook"',
-      a: 'Jordan Tate',
-      b: 'Downtown',
+      a: 'Not set',
+      b: 'Choose a saved favourite',
       c: 'Auto-select on booking',
       d: '—',
     },
@@ -165,16 +68,16 @@ const overviewDefaults = [
     title: 'Default service',
     desc: 'Pre-fills the service field when you start a new booking.',
     pills: [
-      { label: 'Classic Fade + Beard Trim', variant: 'gold' },
-      { label: '$48', variant: 'soft' },
-      { label: '45 min', variant: 'soft' },
+      { label: 'Not set', variant: 'soft' },
+      { label: 'Prefill off', variant: 'soft' },
+      { label: 'Manual pick', variant: 'soft' },
     ],
     toggle: 't-defaultService',
     detail: {
       title: 'Default service',
       subtitle: 'Pre-filled on new bookings',
-      a: 'Classic Fade + Beard Trim',
-      b: '$48 · 45 min',
+      a: 'Not set',
+      b: 'Choose from the live services list',
       c: 'Auto-select on booking',
       d: '—',
     },
@@ -277,14 +180,14 @@ const securityItems = [
     id: 'sessions',
     title: 'Active sessions',
     desc: 'See where you are signed in. Revoke anything unfamiliar.',
-    pills: [{ label: '2 sessions', variant: 'soft' }],
+    pills: [{ label: 'Current session', variant: 'soft' }],
     button: { label: 'Sign out all', variant: 'primary' },
     detail: {
       title: 'Active sessions',
-      subtitle: 'Devices with current access',
-      a: 'iPhone · Eastside',
-      b: 'Web · Downtown',
-      c: '2 active',
+      subtitle: 'Supabase Auth currently exposes the active browser session only',
+      a: 'Current browser session',
+      b: 'Sign-in history not loaded here',
+      c: 'Current session only',
       d: '—',
     },
   },
@@ -296,16 +199,16 @@ const billingItems = [
     title: 'Payment method',
     desc: 'Saved card used for in-store taps and online bookings.',
     pills: [
-      { label: 'Primary', variant: 'gold' },
-      { label: 'Visa •••• 4821', variant: 'soft' },
+      { label: 'No saved card', variant: 'soft' },
+      { label: 'Not configured', variant: 'soft' },
     ],
     button: { label: 'Manage', variant: 'light' },
     detail: {
       title: 'Payment method',
-      subtitle: 'Primary card on file',
-      a: 'Visa •••• 4821',
-      b: 'Expires 08/28',
-      c: 'Marked as primary',
+      subtitle: 'Payment data is not stored in this customer panel',
+      a: 'No saved card',
+      b: 'Payment table not configured',
+      c: 'Use Settings or History for receipts',
       d: '—',
     },
   },
@@ -437,7 +340,7 @@ function Toggle({ id, checked, onChange, marketing }) {
   )
 }
 
-function ItemCard({ item, selected, onSelect, toggles, onToggle }) {
+function ItemCard({ item, selected, onSelect, toggles, onToggle, onButton }) {
   return (
     <article
       className={`mp-item${selected ? ' is-selected' : ''}`}
@@ -477,6 +380,7 @@ function ItemCard({ item, selected, onSelect, toggles, onToggle }) {
             className={`mp-btn ${
               item.button.variant === 'primary' ? 'mp-btn-primary' : 'mp-btn-light'
             }`}
+            onClick={() => onButton?.(item)}
           >
             {item.button.label}
           </button>
@@ -702,27 +606,15 @@ function EditDialog({ name, email, phone, location, saving, onClose, onSave }) {
 export default function MyProfilePage({ onOpenSidebar, onNavigate, session }) {
   const userId = session?.user?.id
   const [activeTab, setActiveTab] = useState('overview')
-  const [profile, setProfile] = useState({
-    id: '',
-    name: '',
-    email: session?.user?.email || '',
-    phone: '',
-    location: 'Downtown',
-    tier: 'silver',
-    loyaltyPoints: 0,
-    memberSince: null,
-    updatedAt: null,
-    settings: {},
-  })
-  const [profileFacts, setProfileFacts] = useState({
-    favoriteBarber: null,
-    latestVisit: null,
-    nextAppointment: null,
-    visitsCount: 0,
-    upcomingCount: 0,
-  })
-  const [factsRefresh, setFactsRefresh] = useState(0)
-  const [profileLoaded, setProfileLoaded] = useState(false)
+  const {
+    customer: profile,
+    setCustomer: setProfile,
+    facts: profileFacts,
+    customerError: profileError,
+    customerLoading: profileLoading,
+    factsError: profileFactsError,
+    factsLoading: profileFactsLoading,
+  } = useCustomerProfile(session)
   const [savingDialog, setSavingDialog] = useState(false)
   const [toast, setToast] = useState('')
   const [toggles, setToggles] = useState({
@@ -734,126 +626,6 @@ export default function MyProfilePage({ onOpenSidebar, onNavigate, session }) {
     't-2fa': false,
     't-tipDefault': true,
   })
-  const applyProfileRow = useCallback(
-    (data) => {
-      const nextProfile = mapCustomerRow(data, session)
-      setProfile(nextProfile)
-      if (nextProfile.settings?.profile_toggles) {
-        setToggles((prev) => ({ ...prev, ...nextProfile.settings.profile_toggles }))
-      }
-      setProfileLoaded(true)
-    },
-    [session],
-  )
-
-  useEffect(() => {
-    if (!userId) return undefined
-    let cancelled = false
-    supabase
-      .from('customers')
-      .select('id, fullname, email, phone, tier, loyalty_points, member_since, updated_at, settings')
-      .eq('id', userId)
-      .single()
-      .then(({ data, error }) => {
-        if (cancelled) return
-        if (error) {
-          setToast(`Couldn't load profile: ${error.message}`)
-          return
-        }
-        if (data) applyProfileRow(data)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [userId, applyProfileRow])
-
-  useEffect(() => {
-    if (!userId) return undefined
-    let cancelled = false
-
-    Promise.all([
-      supabase
-        .from('favorites')
-        .select('barber:barbers ( id, fullname, specialty, location )')
-        .eq('customer_id', userId)
-        .order('created_at', { ascending: true })
-        .limit(1),
-      supabase
-        .from('visits')
-        .select(
-          'id, service, visited_at, location, price_cents, rating, barber:barbers ( fullname, location )',
-          { count: 'exact' },
-        )
-        .eq('customer_id', userId)
-        .order('visited_at', { ascending: false })
-        .limit(1),
-      supabase
-        .from('appointments')
-        .select(
-          'id, service, scheduled_at, duration_minutes, location, price_cents, status, barber:barbers ( fullname, location )',
-          { count: 'exact' },
-        )
-        .eq('customer_id', userId)
-        .eq('status', 'scheduled')
-        .gte('scheduled_at', new Date().toISOString())
-        .order('scheduled_at', { ascending: true })
-        .limit(1),
-    ]).then(([favoriteRes, visitsRes, upcomingRes]) => {
-      if (cancelled) return
-
-      setProfileFacts({
-        favoriteBarber: favoriteRes.data?.[0]?.barber || null,
-        latestVisit: visitsRes.data?.[0] || null,
-        nextAppointment: upcomingRes.data?.[0] || null,
-        visitsCount: visitsRes.count || 0,
-        upcomingCount: upcomingRes.count || 0,
-      })
-    })
-
-    return () => {
-      cancelled = true
-    }
-  }, [userId, factsRefresh])
-
-  useEffect(() => {
-    if (!userId) return undefined
-
-    const channel = supabase
-      .channel(`customer-profile-${userId}`)
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'customers', filter: `id=eq.${userId}` },
-        (payload) => {
-          if (payload.new) applyProfileRow(payload.new)
-        },
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'appointments', filter: `customer_id=eq.${userId}` },
-        () => {
-          setFactsRefresh((tick) => tick + 1)
-        },
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'visits', filter: `customer_id=eq.${userId}` },
-        () => {
-          setFactsRefresh((tick) => tick + 1)
-        },
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'favorites', filter: `customer_id=eq.${userId}` },
-        () => {
-          setFactsRefresh((tick) => tick + 1)
-        },
-      )
-      .subscribe()
-
-    return () => {
-      supabase.removeChannel(channel)
-    }
-  }, [userId, applyProfileRow])
   const [selection, setSelection] = useState({
     overview: 'kv-email',
     preferences: 'pref-loc',
@@ -872,8 +644,37 @@ export default function MyProfilePage({ onOpenSidebar, onNavigate, session }) {
     setProfileDirty(true)
   }
 
+  const handleCardAction = async (item) => {
+    if (item.id === 'password') {
+      const email = profile.email || session?.user?.email
+      if (!email) {
+        setToast('No email address is saved for password recovery.')
+        return
+      }
+      const { error } = await supabase.auth.resetPasswordForEmail(email)
+      setToast(error ? `Couldn't send reset email: ${error.message}` : 'Password reset email sent.')
+      return
+    }
+    if (item.id === 'sessions') {
+      const { error } = await supabase.auth.signOut({ scope: 'global' })
+      if (error) {
+        setToast(`Couldn't sign out everywhere: ${error.message}`)
+        return
+      }
+      onNavigate?.('login')
+      return
+    }
+    if (item.id === 'payment') {
+      onNavigate?.('settings')
+      return
+    }
+    if (item.id === 'receipts') {
+      goHistory()
+    }
+  }
+
   useEffect(() => {
-    if (!userId || !profileLoaded || !profileDirty) return undefined
+    if (!userId || profileLoading || !profileDirty) return undefined
 
     const timeoutId = window.setTimeout(async () => {
       const { error } = await supabase.rpc('merge_settings', {
@@ -889,7 +690,26 @@ export default function MyProfilePage({ onOpenSidebar, onNavigate, session }) {
     }, 300)
 
     return () => window.clearTimeout(timeoutId)
-  }, [userId, profileLoaded, profileDirty, toggles])
+  }, [userId, profileLoading, profileDirty, toggles])
+
+  useEffect(() => {
+    if (profileLoading) return
+    if (!profile.settings?.profile_toggles) return
+    queueMicrotask(() => {
+      setToggles((prev) => ({ ...prev, ...profile.settings.profile_toggles }))
+    })
+  }, [profileLoading, profile.settings?.profile_toggles])
+
+  useEffect(() => {
+    if (!profileError && !profileFactsError) return
+    queueMicrotask(() => {
+      setToast(
+        profileError
+          ? `Couldn't load profile: ${profileError}`
+          : `Couldn't load profile details: ${profileFactsError}`,
+      )
+    })
+  }, [profileError, profileFactsError])
 
   const onTabChange = (id) => {
     setActiveTab(id)
@@ -899,6 +719,7 @@ export default function MyProfilePage({ onOpenSidebar, onNavigate, session }) {
     if (!userId) return
     setSavingDialog(true)
     const nextEmail = draft.email.trim()
+    const nextLocation = draft.location.trim()
     const emailChanged = nextEmail && nextEmail !== profile.email
 
     if (emailChanged) {
@@ -915,7 +736,7 @@ export default function MyProfilePage({ onOpenSidebar, onNavigate, session }) {
     const { error } = await supabase
       .from('customers')
       .update({
-        fullname: draft.name,
+        fullname: draft.name || null,
         email: nextEmail || profile.email,
         phone: draft.phone || null,
       })
@@ -927,19 +748,19 @@ export default function MyProfilePage({ onOpenSidebar, onNavigate, session }) {
     }
     setProfile((prev) => ({
       ...prev,
-      name: draft.name,
+      name: draft.name || '',
       email: nextEmail || prev.email,
-      phone: draft.phone,
-      location: draft.location,
+      phone: draft.phone || '',
+      location: nextLocation || '',
       settings: {
         ...prev.settings,
-        preferred_location: draft.location || 'Downtown',
+        preferred_location: nextLocation || '',
       },
       updatedAt: new Date().toISOString(),
     }))
     const { error: settingsError } = await supabase.rpc('merge_settings', {
       patch: {
-        preferred_location: draft.location || 'Downtown',
+        preferred_location: nextLocation || '',
       },
     })
     if (settingsError) {
@@ -970,12 +791,18 @@ export default function MyProfilePage({ onOpenSidebar, onNavigate, session }) {
     nextAppointment?.location ||
     latestVisit?.barber?.location ||
     latestVisit?.location ||
-    '-'
+    'Not set'
   const defaultServiceName =
     profile.settings?.default_service || nextAppointment?.service || latestVisit?.service || 'Not set'
   const emailState = emailStatus(session?.user)
   const lastSignIn = formatDateTime(session?.user?.last_sign_in_at)
   const memberId = memberIdFrom(profile.id || userId)
+  const activeSessionCount = session?.user ? 1 : 0
+  const activeSessionText =
+    activeSessionCount === 1 ? '1 current session' : 'No active session'
+  const dataLoading = profileLoading || profileFactsLoading
+  const displayName = dataLoading ? 'Loading…' : profile.name || profile.email || 'Not added'
+  const displayLocation = dataLoading ? 'Loading…' : valueOrEmpty(profile.location, 'Not added')
 
   const detailFor = useMemo(() => {
     const overviewDetails = {
@@ -983,10 +810,10 @@ export default function MyProfilePage({ onOpenSidebar, onNavigate, session }) {
         title: 'Profile',
         subtitle: `Member · ${tierLabel(profile.tier)}`,
         rows: [
-          { label: 'Name', value: profile.name },
-          { label: 'Email', value: profile.email },
-          { label: 'Phone', value: profile.phone },
-          { label: 'Preferred branch', value: profile.location },
+          { label: 'Name', value: valueOrEmpty(profile.name, 'Not added') },
+          { label: 'Email', value: valueOrEmpty(profile.email, 'Not added') },
+          { label: 'Phone', value: valueOrEmpty(profile.phone, 'Not added') },
+          { label: 'Preferred branch', value: valueOrEmpty(profile.location, 'Not added') },
           { label: 'Last profile sync', value: formatDateTime(profile.updatedAt) },
         ],
       },
@@ -994,7 +821,7 @@ export default function MyProfilePage({ onOpenSidebar, onNavigate, session }) {
         title: 'Full name',
         subtitle: 'Display name on receipts and reminders',
         rows: [
-          { label: 'Saved name', value: profile.name },
+          { label: 'Saved name', value: valueOrEmpty(profile.name, 'Not added') },
           { label: 'Member ID', value: memberId },
           { label: 'Member since', value: formatDate(profile.memberSince) },
           { label: 'Last updated', value: formatDateTime(profile.updatedAt) },
@@ -1004,7 +831,7 @@ export default function MyProfilePage({ onOpenSidebar, onNavigate, session }) {
         title: 'Email',
         subtitle: 'Used for confirmations, receipts, and account recovery',
         rows: [
-          { label: 'Saved email', value: profile.email },
+          { label: 'Saved email', value: valueOrEmpty(profile.email, 'Not added') },
           { label: 'Auth status', value: emailState },
           { label: 'Last sign-in', value: lastSignIn },
           { label: 'Supabase user', value: memberId },
@@ -1014,7 +841,7 @@ export default function MyProfilePage({ onOpenSidebar, onNavigate, session }) {
         title: 'Phone',
         subtitle: 'Used for SMS reminders when you provide a number',
         rows: [
-          { label: 'Saved phone', value: profile.phone },
+          { label: 'Saved phone', value: valueOrEmpty(profile.phone, 'Not added') },
           { label: 'SMS reminders', value: profile.phone ? 'Available' : 'No phone saved' },
           { label: 'Marketing', value: toggles['t-marketing'] ? 'Allowed' : 'Off' },
           { label: 'Last updated', value: formatDateTime(profile.updatedAt) },
@@ -1025,7 +852,7 @@ export default function MyProfilePage({ onOpenSidebar, onNavigate, session }) {
         subtitle: 'Your Blade & Co. customer reference',
         rows: [
           { label: 'Member ID', value: memberId },
-          { label: 'Customer row', value: profile.id },
+          { label: 'Customer row', value: valueOrEmpty(profile.id, 'Not added') },
           { label: 'Tier', value: tierLabel(profile.tier) },
           { label: 'Points', value: profile.loyaltyPoints.toLocaleString() },
         ],
@@ -1034,8 +861,8 @@ export default function MyProfilePage({ onOpenSidebar, onNavigate, session }) {
         title: 'Default barber',
         subtitle: 'Based on your saved favourite or recent booking activity',
         rows: [
-          { label: 'Barber', value: defaultBarberName },
-          { label: 'Location', value: defaultBarberLocation },
+          { label: 'Barber', value: valueOrEmpty(defaultBarberName, 'Not set') },
+          { label: 'Location', value: valueOrEmpty(defaultBarberLocation, 'Not set') },
           { label: 'Favourite saved', value: favoriteBarber ? 'Yes' : 'No favourite barber' },
           { label: 'Quick rebook', value: toggleText(toggles['t-defaultBarber']) },
         ],
@@ -1044,7 +871,7 @@ export default function MyProfilePage({ onOpenSidebar, onNavigate, session }) {
         title: 'Default service',
         subtitle: 'Based on saved settings, next booking, or latest visit',
         rows: [
-          { label: 'Service', value: defaultServiceName },
+          { label: 'Service', value: valueOrEmpty(defaultServiceName, 'Not set') },
           {
             label: 'Next booking',
             value: nextAppointment
@@ -1123,10 +950,10 @@ export default function MyProfilePage({ onOpenSidebar, onNavigate, session }) {
         title: 'Active sessions',
         subtitle: 'Current browser session from Supabase Auth',
         rows: [
-          { label: 'Known sessions', value: '1 current session' },
+          { label: 'Known sessions', value: activeSessionText },
           { label: 'Last sign-in', value: lastSignIn },
           { label: 'User ID', value: profile.id || session?.user?.id },
-          { label: 'Global sign-out', value: 'Available from Settings' },
+          { label: 'Global sign-out', value: 'Available from this card' },
         ],
       },
     }
@@ -1188,6 +1015,7 @@ export default function MyProfilePage({ onOpenSidebar, onNavigate, session }) {
     profileFacts.visitsCount,
     selectedId,
     session?.user,
+    activeSessionText,
     toggles,
   ])
 
@@ -1297,7 +1125,7 @@ export default function MyProfilePage({ onOpenSidebar, onNavigate, session }) {
     if (item.id === 'sessions') {
       return {
         ...item,
-        pills: [{ label: '1 current session', variant: 'soft' }],
+        pills: [{ label: 'Current session', variant: 'soft' }],
       }
     }
     return item
@@ -1355,7 +1183,7 @@ export default function MyProfilePage({ onOpenSidebar, onNavigate, session }) {
       value: formatMemberSince(profile.memberSince),
       label: 'Member since',
     },
-    { id: 'sessions', icon: 'sessions', value: '1', label: 'Active sessions' },
+    { id: 'sessions', icon: 'sessions', value: activeSessionCount, label: 'Active sessions' },
   ]
 
   return (
@@ -1449,8 +1277,8 @@ export default function MyProfilePage({ onOpenSidebar, onNavigate, session }) {
           {activeTab === 'overview' && (
             <>
               <ProfileHero
-                name={profile.name}
-                location={profile.location}
+                name={displayName}
+                location={displayLocation}
                 tier={tierLabel(profile.tier)}
                 selected={selectedId === 'hero'}
                 onSelect={setItemSelection}
@@ -1462,15 +1290,17 @@ export default function MyProfilePage({ onOpenSidebar, onNavigate, session }) {
               <div className="mp-kv-grid">
                 {kvFields.map((field) => {
                   const fieldValue =
-                    field.id === 'kv-name'
-                      ? profile.name || '-'
-                      : field.id === 'kv-email'
-                        ? profile.email || '-'
-                        : field.id === 'kv-phone'
-                          ? profile.phone || '-'
-                          : field.id === 'kv-id'
-                            ? memberIdFrom(profile.id)
-                            : field.value
+                    dataLoading
+                      ? 'Loading…'
+                      : field.id === 'kv-name'
+                        ? valueOrEmpty(profile.name, 'Not added')
+                        : field.id === 'kv-email'
+                          ? valueOrEmpty(profile.email, 'Not added')
+                          : field.id === 'kv-phone'
+                            ? valueOrEmpty(profile.phone, 'Not added')
+                            : field.id === 'kv-id'
+                              ? memberIdFrom(profile.id)
+                              : 'Not added'
                   return (
                     <KvTile
                       key={field.id}
@@ -1492,6 +1322,7 @@ export default function MyProfilePage({ onOpenSidebar, onNavigate, session }) {
                     onSelect={setItemSelection}
                     toggles={toggles}
                     onToggle={onToggle}
+                    onButton={handleCardAction}
                   />
                 ))}
               </div>
@@ -1508,6 +1339,7 @@ export default function MyProfilePage({ onOpenSidebar, onNavigate, session }) {
                   onSelect={setItemSelection}
                   toggles={toggles}
                   onToggle={onToggle}
+                  onButton={handleCardAction}
                 />
               ))}
             </div>
@@ -1523,6 +1355,7 @@ export default function MyProfilePage({ onOpenSidebar, onNavigate, session }) {
                   onSelect={setItemSelection}
                   toggles={toggles}
                   onToggle={onToggle}
+                  onButton={handleCardAction}
                 />
               ))}
             </div>
@@ -1538,6 +1371,7 @@ export default function MyProfilePage({ onOpenSidebar, onNavigate, session }) {
                   onSelect={setItemSelection}
                   toggles={toggles}
                   onToggle={onToggle}
+                  onButton={handleCardAction}
                 />
               ))}
             </div>

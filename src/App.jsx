@@ -1,19 +1,20 @@
-import { useEffect, useState } from 'react'
-import AdminPage from './Admin/AdminPage.jsx'
-import BookAppointmentPage from './Customer/BookAppointmentPage.jsx'
-import CustomerDashboard from './Customer/CustomerDashboard.jsx'
+import { Suspense, lazy, useEffect, useState } from 'react'
 import CustomerShell from './Customer/CustomerShell.jsx'
-import FavouritesPage from './Customer/FavouritesPage.jsx'
-import HistoryPage from './Customer/HistoryPage.jsx'
-import MyAppointmentsPage from './Customer/MyAppointmentsPage.jsx'
-import MyProfilePage from './Customer/MyProfilePage.jsx'
-import NotificationsPage from './Customer/NotificationsPage.jsx'
-import SettingsPage from './Customer/SettingsPage.jsx'
-import ForgotPasswordPage from './features/auth/ForgotPasswordPage.jsx'
-import LoginPage from './features/auth/LoginPage.jsx'
-import RegisterPage from './features/auth/RegisterPage.jsx'
 import { supabase } from './lib/supabase.js'
 import './App.css'
+
+const AdminPage = lazy(() => import('./Admin/AdminPage.jsx'))
+const BookAppointmentPage = lazy(() => import('./Customer/BookAppointmentPage.jsx'))
+const CustomerDashboard = lazy(() => import('./Customer/CustomerDashboard.jsx'))
+const FavouritesPage = lazy(() => import('./Customer/FavouritesPage.jsx'))
+const HistoryPage = lazy(() => import('./Customer/HistoryPage.jsx'))
+const MyAppointmentsPage = lazy(() => import('./Customer/MyAppointmentsPage.jsx'))
+const MyProfilePage = lazy(() => import('./Customer/MyProfilePage.jsx'))
+const NotificationsPage = lazy(() => import('./Customer/NotificationsPage.jsx'))
+const SettingsPage = lazy(() => import('./Customer/SettingsPage.jsx'))
+const ForgotPasswordPage = lazy(() => import('./features/auth/ForgotPasswordPage.jsx'))
+const LoginPage = lazy(() => import('./features/auth/LoginPage.jsx'))
+const RegisterPage = lazy(() => import('./features/auth/RegisterPage.jsx'))
 
 const AUTH_PAGES = new Set(['login', 'register', 'forgot-password'])
 const CUSTOMER_PAGES = new Set([
@@ -177,7 +178,11 @@ function App() {
   }
 
   if (session && userRole === 'admin') {
-    return <AdminPage session={session} onLogout={handleLogout} />
+    return (
+      <Suspense fallback={null}>
+        <AdminPage session={session} onLogout={handleLogout} />
+      </Suspense>
+    )
   }
 
   if (session) {
@@ -193,8 +198,9 @@ function App() {
         unreadCount={unreadCount}
       >
         {({ onOpenSidebar }) => {
+          let content
           if (customerPage === 'book') {
-            return (
+            content = (
               <BookAppointmentPage
                 onOpenSidebar={onOpenSidebar}
                 onBack={() => navigate('dashboard')}
@@ -203,9 +209,8 @@ function App() {
                 session={session}
               />
             )
-          }
-          if (customerPage === 'appointments') {
-            return (
+          } else if (customerPage === 'appointments') {
+            content = (
               <MyAppointmentsPage
                 onOpenSidebar={onOpenSidebar}
                 onAppointmentsChange={refreshAppointments}
@@ -213,36 +218,32 @@ function App() {
                 session={session}
               />
             )
-          }
-          if (customerPage === 'history') {
-            return (
+          } else if (customerPage === 'history') {
+            content = (
               <HistoryPage
                 onOpenSidebar={onOpenSidebar}
                 onNavigate={navigate}
                 session={session}
               />
             )
-          }
-          if (customerPage === 'favourites') {
-            return (
+          } else if (customerPage === 'favourites') {
+            content = (
               <FavouritesPage
                 onOpenSidebar={onOpenSidebar}
                 onNavigate={navigate}
                 session={session}
               />
             )
-          }
-          if (customerPage === 'profile') {
-            return (
+          } else if (customerPage === 'profile') {
+            content = (
               <MyProfilePage
                 onOpenSidebar={onOpenSidebar}
                 onNavigate={navigate}
                 session={session}
               />
             )
-          }
-          if (customerPage === 'notifications') {
-            return (
+          } else if (customerPage === 'notifications') {
+            content = (
               <NotificationsPage
                 onOpenSidebar={onOpenSidebar}
                 onNavigate={navigate}
@@ -250,9 +251,8 @@ function App() {
                 onUnreadChange={refreshUnread}
               />
             )
-          }
-          if (customerPage === 'settings') {
-            return (
+          } else if (customerPage === 'settings') {
+            content = (
               <SettingsPage
                 onOpenSidebar={onOpenSidebar}
                 onNavigate={navigate}
@@ -261,15 +261,21 @@ function App() {
                 session={session}
               />
             )
+          } else {
+            content = (
+              <CustomerDashboard
+                onOpenSidebar={onOpenSidebar}
+                onAppointmentsChange={refreshAppointments}
+                onNavigate={navigate}
+                session={session}
+                unreadCount={unreadCount}
+              />
+            )
           }
           return (
-            <CustomerDashboard
-              onOpenSidebar={onOpenSidebar}
-              onAppointmentsChange={refreshAppointments}
-              onNavigate={navigate}
-              session={session}
-              unreadCount={unreadCount}
-            />
+            <Suspense fallback={null}>
+              {content}
+            </Suspense>
           )
         }}
       </CustomerShell>
@@ -277,19 +283,29 @@ function App() {
   }
 
   if (page === 'register') {
-    return <RegisterPage onSignIn={() => navigate('login')} />
+    return (
+      <Suspense fallback={null}>
+        <RegisterPage onSignIn={() => navigate('login')} />
+      </Suspense>
+    )
   }
 
   if (page === 'forgot-password') {
-    return <ForgotPasswordPage onBack={() => navigate('login')} />
+    return (
+      <Suspense fallback={null}>
+        <ForgotPasswordPage onBack={() => navigate('login')} />
+      </Suspense>
+    )
   }
 
   return (
-    <LoginPage
-      onCreateAccount={() => navigate('register')}
-      onForgotPassword={() => navigate('forgot-password')}
-      onSignIn={() => navigate('dashboard')}
-    />
+    <Suspense fallback={null}>
+      <LoginPage
+        onCreateAccount={() => navigate('register')}
+        onForgotPassword={() => navigate('forgot-password')}
+        onSignIn={() => navigate('dashboard')}
+      />
+    </Suspense>
   )
 }
 

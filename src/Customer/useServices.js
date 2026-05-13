@@ -75,7 +75,9 @@ function mapService(row) {
 
 export function useServices() {
   const [services, setServices] = useState(DEFAULT_SERVICES)
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [usingFallback, setUsingFallback] = useState(true)
 
   useEffect(() => {
     let cancelled = false
@@ -88,9 +90,29 @@ export function useServices() {
       .order('name', { ascending: true })
       .then(({ data, error }) => {
         if (cancelled) return
-        if (!error && data?.length) {
-          setServices(data.map(mapService))
+        if (error) {
+          setServices(DEFAULT_SERVICES)
+          setUsingFallback(true)
+          setError(error.message)
+          setLoading(false)
+          return
         }
+        if (!data?.length) {
+          setServices(DEFAULT_SERVICES)
+          setUsingFallback(true)
+          setError('No active services found. Showing local defaults.')
+          setLoading(false)
+          return
+        }
+        setServices(data.map(mapService))
+        setUsingFallback(false)
+        setLoading(false)
+      })
+      .catch((err) => {
+        if (cancelled) return
+        setServices(DEFAULT_SERVICES)
+        setUsingFallback(true)
+        setError(err.message || 'Unable to load services. Showing local defaults.')
         setLoading(false)
       })
 
@@ -99,5 +121,5 @@ export function useServices() {
     }
   }, [])
 
-  return { services, loading }
+  return { services, loading, error, usingFallback }
 }
