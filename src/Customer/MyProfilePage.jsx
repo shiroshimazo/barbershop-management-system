@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase.js'
 import Toast from '../components/Toast.jsx'
 
@@ -16,6 +16,63 @@ function memberIdFrom(uuid) {
 function formatMemberSince(iso) {
   if (!iso) return '-'
   return new Date(iso).getFullYear().toString()
+}
+
+function formatDateTime(iso) {
+  if (!iso) return '-'
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return '-'
+  return new Intl.DateTimeFormat(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(date)
+}
+
+function formatDate(iso) {
+  if (!iso) return '-'
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return '-'
+  return new Intl.DateTimeFormat(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  }).format(date)
+}
+
+function formatMoney(cents) {
+  if (typeof cents !== 'number') return '-'
+  return `$${(cents / 100).toFixed(2)}`
+}
+
+function valueOrEmpty(value, fallback = 'Not added') {
+  return value == null || value === '' ? fallback : value
+}
+
+function toggleText(value) {
+  return value ? 'On' : 'Off'
+}
+
+function mapCustomerRow(data, session) {
+  const settings = data?.settings && typeof data.settings === 'object' ? data.settings : {}
+  return {
+    id: data?.id || session?.user?.id || '',
+    name: data?.fullname || session?.user?.email?.split('@')[0] || '',
+    email: data?.email || session?.user?.email || '',
+    phone: data?.phone || '',
+    location: settings.preferred_location || 'Downtown',
+    tier: data?.tier || 'silver',
+    loyaltyPoints: data?.loyalty_points || 0,
+    memberSince: data?.member_since || data?.created_at || session?.user?.created_at || null,
+    updatedAt: data?.updated_at || null,
+    settings,
+  }
+}
+
+function emailStatus(user) {
+  if (user?.email_confirmed_at || user?.confirmed_at) return 'Verified'
+  return 'Needs confirmation'
 }
 
 const tabs = [
@@ -290,18 +347,6 @@ const billingItems = [
   },
 ]
 
-const heroItem = {
-  id: 'hero',
-  detail: {
-    title: 'Profile',
-    subtitle: 'Member · Gold',
-    a: 'Marcus R.',
-    b: 'marcus.r@example.com',
-    c: '+1 (415) 555-0148',
-    d: 'Preferred location: Downtown',
-  },
-}
-
 function Icon({ name }) {
   const commonProps = {
     'aria-hidden': true,
@@ -517,7 +562,14 @@ function ProfileHero({
   )
 }
 
-function DetailPanel({ tab, detail, primaryLabel, onHistory }) {
+function DetailPanel({ tab, detail, primaryLabel, onPrimary, onHistory }) {
+  const rows = detail.rows || [
+    { label: 'Primary', value: detail.a },
+    { label: 'Location', value: detail.b },
+    { label: 'Behavior', value: detail.c },
+    { label: 'Notes', value: detail.d },
+  ]
+
   return (
     <aside className="mp-detail" aria-label="Profile detail">
       <p className="mp-kicker">{tab}</p>
@@ -525,26 +577,20 @@ function DetailPanel({ tab, detail, primaryLabel, onHistory }) {
       <p className="mp-detail-sub">{detail.subtitle}</p>
 
       <dl className="mp-dl">
-        <div className="mp-row">
-          <dt>Primary</dt>
-          <dd>{detail.a}</dd>
-        </div>
-        <div className="mp-row">
-          <dt>Location</dt>
-          <dd>{detail.b}</dd>
-        </div>
-        <div className="mp-row">
-          <dt>Behavior</dt>
-          <dd>{detail.c}</dd>
-        </div>
-        <div className="mp-row">
-          <dt>Notes</dt>
-          <dd>{detail.d}</dd>
-        </div>
+        {rows.map((row) => (
+          <div className="mp-row" key={row.label}>
+            <dt>{row.label}</dt>
+            <dd>{valueOrEmpty(row.value, '-')}</dd>
+          </div>
+        ))}
       </dl>
 
       <div className="mp-detail-actions">
-        <button className="mp-btn mp-btn-primary mp-btn-block" type="button">
+        <button
+          className="mp-btn mp-btn-primary mp-btn-block"
+          type="button"
+          onClick={onPrimary}
+        >
           {primaryLabel}
         </button>
         <button
@@ -557,8 +603,8 @@ function DetailPanel({ tab, detail, primaryLabel, onHistory }) {
       </div>
 
       <p className="mp-note">
-        Prototype note: this panel mirrors how your other screens use a sticky right-side
-        detail surface. Clicking any card on the left updates it.
+        This detail is loaded from the signed-in profile, saved settings, and booking
+        history available for this account.
       </p>
     </aside>
   )
@@ -665,44 +711,20 @@ export default function MyProfilePage({ onOpenSidebar, onNavigate, session }) {
     tier: 'silver',
     loyaltyPoints: 0,
     memberSince: null,
+    updatedAt: null,
+    settings: {},
   })
+  const [profileFacts, setProfileFacts] = useState({
+    favoriteBarber: null,
+    latestVisit: null,
+    nextAppointment: null,
+    visitsCount: 0,
+    upcomingCount: 0,
+  })
+  const [factsRefresh, setFactsRefresh] = useState(0)
   const [profileLoaded, setProfileLoaded] = useState(false)
   const [savingDialog, setSavingDialog] = useState(false)
   const [toast, setToast] = useState('')
-
-  useEffect(() => {
-    if (!userId) return undefined
-    let cancelled = false
-    supabase
-      .from('customers')
-      .select('id, fullname, email, phone, tier, loyalty_points, member_since, settings')
-      .eq('id', userId)
-      .single()
-      .then(({ data }) => {
-        if (cancelled || !data) return
-        const preferredLocation = data.settings?.preferred_location || 'Downtown'
-        setProfile({
-          id: data.id,
-          name: data.fullname || session?.user?.email?.split('@')[0] || '',
-          email: data.email || session?.user?.email || '',
-          phone: data.phone || '',
-          location: preferredLocation,
-          tier: data.tier || 'silver',
-          loyaltyPoints: data.loyalty_points || 0,
-          memberSince: data.member_since || null,
-        })
-        setProfileLoaded(true)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [userId, session?.user?.email])
-  const [selection, setSelection] = useState({
-    overview: 'kv-email',
-    preferences: 'pref-loc',
-    security: 'password',
-    billing: 'payment',
-  })
   const [toggles, setToggles] = useState({
     't-defaultBarber': true,
     't-defaultService': true,
@@ -711,6 +733,132 @@ export default function MyProfilePage({ onOpenSidebar, onNavigate, session }) {
     't-marketing': false,
     't-2fa': false,
     't-tipDefault': true,
+  })
+  const applyProfileRow = useCallback(
+    (data) => {
+      const nextProfile = mapCustomerRow(data, session)
+      setProfile(nextProfile)
+      if (nextProfile.settings?.profile_toggles) {
+        setToggles((prev) => ({ ...prev, ...nextProfile.settings.profile_toggles }))
+      }
+      setProfileLoaded(true)
+    },
+    [session],
+  )
+
+  useEffect(() => {
+    if (!userId) return undefined
+    let cancelled = false
+    supabase
+      .from('customers')
+      .select('id, fullname, email, phone, tier, loyalty_points, member_since, updated_at, settings')
+      .eq('id', userId)
+      .single()
+      .then(({ data, error }) => {
+        if (cancelled) return
+        if (error) {
+          setToast(`Couldn't load profile: ${error.message}`)
+          return
+        }
+        if (data) applyProfileRow(data)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [userId, applyProfileRow])
+
+  useEffect(() => {
+    if (!userId) return undefined
+    let cancelled = false
+
+    Promise.all([
+      supabase
+        .from('favorites')
+        .select('barber:barbers ( id, fullname, specialty, location )')
+        .eq('customer_id', userId)
+        .order('created_at', { ascending: true })
+        .limit(1),
+      supabase
+        .from('visits')
+        .select(
+          'id, service, visited_at, location, price_cents, rating, barber:barbers ( fullname, location )',
+          { count: 'exact' },
+        )
+        .eq('customer_id', userId)
+        .order('visited_at', { ascending: false })
+        .limit(1),
+      supabase
+        .from('appointments')
+        .select(
+          'id, service, scheduled_at, duration_minutes, location, price_cents, status, barber:barbers ( fullname, location )',
+          { count: 'exact' },
+        )
+        .eq('customer_id', userId)
+        .eq('status', 'scheduled')
+        .gte('scheduled_at', new Date().toISOString())
+        .order('scheduled_at', { ascending: true })
+        .limit(1),
+    ]).then(([favoriteRes, visitsRes, upcomingRes]) => {
+      if (cancelled) return
+
+      setProfileFacts({
+        favoriteBarber: favoriteRes.data?.[0]?.barber || null,
+        latestVisit: visitsRes.data?.[0] || null,
+        nextAppointment: upcomingRes.data?.[0] || null,
+        visitsCount: visitsRes.count || 0,
+        upcomingCount: upcomingRes.count || 0,
+      })
+    })
+
+    return () => {
+      cancelled = true
+    }
+  }, [userId, factsRefresh])
+
+  useEffect(() => {
+    if (!userId) return undefined
+
+    const channel = supabase
+      .channel(`customer-profile-${userId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'customers', filter: `id=eq.${userId}` },
+        (payload) => {
+          if (payload.new) applyProfileRow(payload.new)
+        },
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'appointments', filter: `customer_id=eq.${userId}` },
+        () => {
+          setFactsRefresh((tick) => tick + 1)
+        },
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'visits', filter: `customer_id=eq.${userId}` },
+        () => {
+          setFactsRefresh((tick) => tick + 1)
+        },
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'favorites', filter: `customer_id=eq.${userId}` },
+        () => {
+          setFactsRefresh((tick) => tick + 1)
+        },
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [userId, applyProfileRow])
+  const [selection, setSelection] = useState({
+    overview: 'kv-email',
+    preferences: 'pref-loc',
+    security: 'password',
+    billing: 'payment',
   })
   const [dialogOpen, setDialogOpen] = useState(false)
   const [profileDirty, setProfileDirty] = useState(false)
@@ -783,6 +931,11 @@ export default function MyProfilePage({ onOpenSidebar, onNavigate, session }) {
       email: nextEmail || prev.email,
       phone: draft.phone,
       location: draft.location,
+      settings: {
+        ...prev.settings,
+        preferred_location: draft.location || 'Downtown',
+      },
+      updatedAt: new Date().toISOString(),
     }))
     const { error: settingsError } = await supabase.rpc('merge_settings', {
       patch: {
@@ -803,31 +956,255 @@ export default function MyProfilePage({ onOpenSidebar, onNavigate, session }) {
   const goHistory = () => onNavigate?.('history')
 
   const selectedId = selection[activeTab]
+  const favoriteBarber = profileFacts.favoriteBarber
+  const latestVisit = profileFacts.latestVisit
+  const nextAppointment = profileFacts.nextAppointment
+  const defaultBarberName =
+    favoriteBarber?.fullname ||
+    nextAppointment?.barber?.fullname ||
+    latestVisit?.barber?.fullname ||
+    'Not set'
+  const defaultBarberLocation =
+    favoriteBarber?.location ||
+    nextAppointment?.barber?.location ||
+    nextAppointment?.location ||
+    latestVisit?.barber?.location ||
+    latestVisit?.location ||
+    '-'
+  const defaultServiceName =
+    profile.settings?.default_service || nextAppointment?.service || latestVisit?.service || 'Not set'
+  const emailState = emailStatus(session?.user)
+  const lastSignIn = formatDateTime(session?.user?.last_sign_in_at)
+  const memberId = memberIdFrom(profile.id || userId)
 
-  const detailFor = (() => {
-    if (activeTab === 'overview') {
-      if (selectedId === 'hero') return heroItem.detail
-      const kv = kvFields.find((f) => f.id === selectedId)
-      if (kv) return kv.detail
-      const def = overviewDefaults.find((d) => d.id === selectedId)
-      if (def) return def.detail
-      return kvFields[0].detail
+  const detailFor = useMemo(() => {
+    const overviewDetails = {
+      hero: {
+        title: 'Profile',
+        subtitle: `Member · ${tierLabel(profile.tier)}`,
+        rows: [
+          { label: 'Name', value: profile.name },
+          { label: 'Email', value: profile.email },
+          { label: 'Phone', value: profile.phone },
+          { label: 'Preferred branch', value: profile.location },
+          { label: 'Last profile sync', value: formatDateTime(profile.updatedAt) },
+        ],
+      },
+      'kv-name': {
+        title: 'Full name',
+        subtitle: 'Display name on receipts and reminders',
+        rows: [
+          { label: 'Saved name', value: profile.name },
+          { label: 'Member ID', value: memberId },
+          { label: 'Member since', value: formatDate(profile.memberSince) },
+          { label: 'Last updated', value: formatDateTime(profile.updatedAt) },
+        ],
+      },
+      'kv-email': {
+        title: 'Email',
+        subtitle: 'Used for confirmations, receipts, and account recovery',
+        rows: [
+          { label: 'Saved email', value: profile.email },
+          { label: 'Auth status', value: emailState },
+          { label: 'Last sign-in', value: lastSignIn },
+          { label: 'Supabase user', value: memberId },
+        ],
+      },
+      'kv-phone': {
+        title: 'Phone',
+        subtitle: 'Used for SMS reminders when you provide a number',
+        rows: [
+          { label: 'Saved phone', value: profile.phone },
+          { label: 'SMS reminders', value: profile.phone ? 'Available' : 'No phone saved' },
+          { label: 'Marketing', value: toggles['t-marketing'] ? 'Allowed' : 'Off' },
+          { label: 'Last updated', value: formatDateTime(profile.updatedAt) },
+        ],
+      },
+      'kv-id': {
+        title: 'Member ID',
+        subtitle: 'Your Blade & Co. customer reference',
+        rows: [
+          { label: 'Member ID', value: memberId },
+          { label: 'Customer row', value: profile.id },
+          { label: 'Tier', value: tierLabel(profile.tier) },
+          { label: 'Points', value: profile.loyaltyPoints.toLocaleString() },
+        ],
+      },
+      'default-barber': {
+        title: 'Default barber',
+        subtitle: 'Based on your saved favourite or recent booking activity',
+        rows: [
+          { label: 'Barber', value: defaultBarberName },
+          { label: 'Location', value: defaultBarberLocation },
+          { label: 'Favourite saved', value: favoriteBarber ? 'Yes' : 'No favourite barber' },
+          { label: 'Quick rebook', value: toggleText(toggles['t-defaultBarber']) },
+        ],
+      },
+      'default-service': {
+        title: 'Default service',
+        subtitle: 'Based on saved settings, next booking, or latest visit',
+        rows: [
+          { label: 'Service', value: defaultServiceName },
+          {
+            label: 'Next booking',
+            value: nextAppointment
+              ? `${nextAppointment.service} · ${formatDateTime(nextAppointment.scheduled_at)}`
+              : 'No upcoming booking',
+          },
+          {
+            label: 'Latest visit',
+            value: latestVisit
+              ? `${latestVisit.service} · ${formatDate(latestVisit.visited_at)}`
+              : 'No visits yet',
+          },
+          { label: 'Auto-select', value: toggleText(toggles['t-defaultService']) },
+        ],
+      },
     }
-    if (activeTab === 'preferences') {
-      return (
-        preferenceItems.find((i) => i.id === selectedId)?.detail ||
-        preferenceItems[0].detail
-      )
+
+    const preferenceDetails = {
+      'pref-loc': {
+        title: 'Preferred location',
+        subtitle: 'Saved on your customer settings',
+        rows: [
+          { label: 'Preferred branch', value: profile.location },
+          { label: 'Next appointment', value: nextAppointment?.location || '-' },
+          { label: 'Latest visit', value: latestVisit?.location || '-' },
+          { label: 'Auto-select', value: toggleText(toggles['t-prefLoc']) },
+        ],
+      },
+      'time-window': {
+        title: 'Time window',
+        subtitle: 'Booking-time preference saved for this account',
+        rows: [
+          { label: 'Saved window', value: profile.settings?.time_window || 'Not saved' },
+          {
+            label: 'Next booking',
+            value: nextAppointment ? formatDateTime(nextAppointment.scheduled_at) : 'No upcoming booking',
+          },
+          { label: 'Suggestion toggle', value: toggleText(toggles['t-timeWindow']) },
+          { label: 'Stored in profile', value: profile.settings?.time_window ? 'Yes' : 'No' },
+        ],
+      },
+      marketing: {
+        title: 'Communication',
+        subtitle: 'Contact options available for this signed-in account',
+        rows: [
+          { label: 'Email receipts', value: profile.email ? 'Available' : 'No email saved' },
+          { label: 'SMS reminders', value: profile.phone ? 'Available' : 'No phone saved' },
+          { label: 'Marketing', value: toggles['t-marketing'] ? 'Allowed' : 'Off' },
+          { label: 'Email status', value: emailState },
+        ],
+      },
+    }
+
+    const securityDetails = {
+      password: {
+        title: 'Password',
+        subtitle: 'Supabase Auth status for the signed-in account',
+        rows: [
+          { label: 'Email', value: session?.user?.email || profile.email },
+          { label: 'Email status', value: emailState },
+          { label: 'Last sign-in', value: lastSignIn },
+          { label: 'Account created', value: formatDate(session?.user?.created_at) },
+        ],
+      },
+      '2fa': {
+        title: 'Two-factor authentication',
+        subtitle: 'Preference state saved on your profile',
+        rows: [
+          { label: 'Toggle', value: toggles['t-2fa'] ? 'Requested' : 'Off' },
+          { label: 'Auth provider', value: session?.user?.app_metadata?.provider || 'email' },
+          { label: 'Phone factor', value: profile.phone ? 'Phone saved' : 'No phone saved' },
+          { label: 'Status', value: 'No MFA enrollment table connected' },
+        ],
+      },
+      sessions: {
+        title: 'Active sessions',
+        subtitle: 'Current browser session from Supabase Auth',
+        rows: [
+          { label: 'Known sessions', value: '1 current session' },
+          { label: 'Last sign-in', value: lastSignIn },
+          { label: 'User ID', value: profile.id || session?.user?.id },
+          { label: 'Global sign-out', value: 'Available from Settings' },
+        ],
+      },
+    }
+
+    const billingDetails = {
+      payment: {
+        title: 'Payment method',
+        subtitle: 'Payment data available for this profile',
+        rows: [
+          { label: 'Primary card', value: 'No saved card' },
+          { label: 'Payment table', value: 'Not configured' },
+          { label: 'Customer email', value: profile.email },
+          { label: 'Receipts', value: `${profileFacts.visitsCount} visit records` },
+        ],
+      },
+      receipts: {
+        title: 'Receipts',
+        subtitle: 'Generated from completed visits',
+        rows: [
+          { label: 'Total visits', value: profileFacts.visitsCount },
+          {
+            label: 'Latest visit',
+            value: latestVisit
+              ? `${latestVisit.service} · ${formatDate(latestVisit.visited_at)}`
+              : 'No visits yet',
+          },
+          { label: 'Latest total', value: latestVisit ? formatMoney(latestVisit.price_cents) : '-' },
+          { label: 'Export', value: 'CSV from History' },
+        ],
+      },
+      tips: {
+        title: 'Tips default',
+        subtitle: 'Checkout preference saved for this profile',
+        rows: [
+          { label: 'Saved default', value: profile.settings?.default_tip_percent || 'Not saved' },
+          { label: 'Toggle', value: toggleText(toggles['t-tipDefault']) },
+          { label: 'Latest rating', value: latestVisit?.rating ? `${latestVisit.rating}/5` : '-' },
+          { label: 'Editable', value: 'At checkout' },
+        ],
+      },
+    }
+
+    if (activeTab === 'overview') return overviewDetails[selectedId] || overviewDetails.hero
+    if (activeTab === 'preferences') return preferenceDetails[selectedId] || preferenceDetails['pref-loc']
+    if (activeTab === 'security') return securityDetails[selectedId] || securityDetails.password
+    return billingDetails[selectedId] || billingDetails.payment
+  }, [
+    activeTab,
+    defaultBarberLocation,
+    defaultBarberName,
+    defaultServiceName,
+    emailState,
+    favoriteBarber,
+    lastSignIn,
+    latestVisit,
+    memberId,
+    nextAppointment,
+    profile,
+    profileFacts.visitsCount,
+    selectedId,
+    session?.user,
+    toggles,
+  ])
+
+  const primaryLabel =
+    activeTab === 'billing' ? 'Open History' : activeTab === 'security' ? 'Review' : 'Edit this'
+
+  const onDetailPrimary = () => {
+    if (activeTab === 'billing') {
+      goHistory()
+      return
     }
     if (activeTab === 'security') {
-      return (
-        securityItems.find((i) => i.id === selectedId)?.detail || securityItems[0].detail
-      )
+      setToast('Security details are loaded from the current Supabase Auth session.')
+      return
     }
-    return billingItems.find((i) => i.id === selectedId)?.detail || billingItems[0].detail
-  })()
-
-  const primaryLabel = activeTab === 'security' ? 'Review' : 'Edit this'
+    setDialogOpen(true)
+  }
 
   const sectionLabel = {
     overview: 'Pick an item to see its details and actions on the right.',
@@ -842,6 +1219,121 @@ export default function MyProfilePage({ onOpenSidebar, onNavigate, session }) {
     security: 'Security',
     billing: 'Billing',
   }[activeTab]
+
+  const liveOverviewDefaults = overviewDefaults.map((item) => {
+    if (item.id === 'default-barber') {
+      return {
+        ...item,
+        desc: 'Uses your saved favourite first, then recent booking activity.',
+        pills: [
+          { label: defaultBarberName, variant: defaultBarberName === 'Not set' ? 'soft' : 'gold' },
+          ...(defaultBarberLocation !== '-' ? [{ label: defaultBarberLocation, variant: 'soft' }] : []),
+        ],
+      }
+    }
+    if (item.id === 'default-service') {
+      return {
+        ...item,
+        desc: 'Uses a saved setting first, then your next booking or latest visit.',
+        pills: [
+          { label: defaultServiceName, variant: defaultServiceName === 'Not set' ? 'soft' : 'gold' },
+          ...(nextAppointment?.duration_minutes
+            ? [{ label: `${nextAppointment.duration_minutes} min`, variant: 'soft' }]
+            : []),
+        ],
+      }
+    }
+    return item
+  })
+
+  const livePreferenceItems = preferenceItems.map((item) => {
+    if (item.id === 'pref-loc') {
+      return {
+        ...item,
+        pills: [
+          { label: profile.location || 'Not set', variant: profile.location ? 'gold' : 'soft' },
+          ...(latestVisit?.location ? [{ label: `Latest: ${latestVisit.location}`, variant: 'soft' }] : []),
+        ],
+      }
+    }
+    if (item.id === 'time-window') {
+      const savedWindow = profile.settings?.time_window || 'Not saved'
+      return {
+        ...item,
+        pills: [{ label: savedWindow, variant: savedWindow === 'Not saved' ? 'soft' : 'gold' }],
+      }
+    }
+    if (item.id === 'marketing') {
+      return {
+        ...item,
+        pills: [
+          { label: profile.phone ? 'SMS available' : 'No phone saved', variant: profile.phone ? 'gold' : 'soft' },
+          { label: emailState, variant: emailState === 'Verified' ? 'gold' : 'soft' },
+        ],
+      }
+    }
+    return item
+  })
+
+  const liveSecurityItems = securityItems.map((item) => {
+    if (item.id === 'password') {
+      return {
+        ...item,
+        pills: [
+          { label: emailState, variant: emailState === 'Verified' ? 'gold' : 'soft' },
+          { label: `Last sign-in: ${lastSignIn}`, variant: 'soft' },
+        ],
+      }
+    }
+    if (item.id === '2fa') {
+      return {
+        ...item,
+        pills: [
+          { label: toggles['t-2fa'] ? 'Requested' : 'Off', variant: toggles['t-2fa'] ? 'gold' : 'soft' },
+          { label: session?.user?.app_metadata?.provider || 'email', variant: 'soft' },
+        ],
+      }
+    }
+    if (item.id === 'sessions') {
+      return {
+        ...item,
+        pills: [{ label: '1 current session', variant: 'soft' }],
+      }
+    }
+    return item
+  })
+
+  const liveBillingItems = billingItems.map((item) => {
+    if (item.id === 'payment') {
+      return {
+        ...item,
+        pills: [
+          { label: 'No saved card', variant: 'soft' },
+          { label: profile.email || 'No email', variant: profile.email ? 'gold' : 'soft' },
+        ],
+      }
+    }
+    if (item.id === 'receipts') {
+      return {
+        ...item,
+        pills: [
+          { label: `${profileFacts.visitsCount} visits`, variant: profileFacts.visitsCount ? 'gold' : 'soft' },
+          { label: latestVisit ? formatMoney(latestVisit.price_cents) : 'No receipts', variant: 'soft' },
+        ],
+      }
+    }
+    if (item.id === 'tips') {
+      const tipDefault = profile.settings?.default_tip_percent
+      return {
+        ...item,
+        pills: [
+          { label: tipDefault ? `${tipDefault}%` : 'No default', variant: tipDefault ? 'gold' : 'soft' },
+          { label: toggleText(toggles['t-tipDefault']), variant: 'soft' },
+        ],
+      }
+    }
+    return item
+  })
 
   const liveStats = [
     {
@@ -992,7 +1484,7 @@ export default function MyProfilePage({ onOpenSidebar, onNavigate, session }) {
 
               <p className="mp-section-label">Defaults</p>
               <div className="mp-item-list">
-                {overviewDefaults.map((item) => (
+                {liveOverviewDefaults.map((item) => (
                   <ItemCard
                     key={item.id}
                     item={item}
@@ -1008,7 +1500,7 @@ export default function MyProfilePage({ onOpenSidebar, onNavigate, session }) {
 
           {activeTab === 'preferences' && (
             <div className="mp-item-list">
-              {preferenceItems.map((item) => (
+              {livePreferenceItems.map((item) => (
                 <ItemCard
                   key={item.id}
                   item={item}
@@ -1023,7 +1515,7 @@ export default function MyProfilePage({ onOpenSidebar, onNavigate, session }) {
 
           {activeTab === 'security' && (
             <div className="mp-item-list">
-              {securityItems.map((item) => (
+              {liveSecurityItems.map((item) => (
                 <ItemCard
                   key={item.id}
                   item={item}
@@ -1038,7 +1530,7 @@ export default function MyProfilePage({ onOpenSidebar, onNavigate, session }) {
 
           {activeTab === 'billing' && (
             <div className="mp-item-list">
-              {billingItems.map((item) => (
+              {liveBillingItems.map((item) => (
                 <ItemCard
                   key={item.id}
                   item={item}
@@ -1056,6 +1548,7 @@ export default function MyProfilePage({ onOpenSidebar, onNavigate, session }) {
           tab={activeTab}
           detail={detailFor}
           primaryLabel={primaryLabel}
+          onPrimary={onDetailPrimary}
           onHistory={goHistory}
         />
       </div>
