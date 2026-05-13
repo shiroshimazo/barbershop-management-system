@@ -1201,8 +1201,8 @@
 
 .customer-button-light {
   border: 1px solid rgba(243, 239, 230, 0.24);
-  background: transparent;
-  color: var(--cream);
+  background: var(--accent);
+  color: var(--ink);
 }
 
 .customer-hero-card {
