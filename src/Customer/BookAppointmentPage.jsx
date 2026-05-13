@@ -75,6 +75,12 @@ function buildScheduledAt(date, slot) {
   return d
 }
 
+function isPastTimeSlot(date, slot, now = new Date()) {
+  if (!date || !slot) return false
+  const scheduledAt = buildScheduledAt(date, slot)
+  return scheduledAt ? scheduledAt <= now : false
+}
+
 const timeGroups = [
   {
     label: 'Morning',
@@ -281,6 +287,7 @@ function BarberPanel({
 function WhenPanel({
   selectedBarberName,
   selectedDay,
+  selectedDate,
   selectedTime,
   onSelectDay,
   onSelectTime,
@@ -290,6 +297,7 @@ function WhenPanel({
   onNextMonth,
   canGoBack,
   takenSlots,
+  now,
 }) {
   return (
     <section className="book-panel" aria-labelledby="book-when-heading">
@@ -371,7 +379,8 @@ function WhenPanel({
                   const time = typeof slot === 'string' ? slot : slot.time
                   const presetDisabled = typeof slot === 'object' && slot.disabled
                   const taken = takenSlots?.has(time)
-                  const disabled = presetDisabled || taken
+                  const past = isPastTimeSlot(selectedDate, time, now)
+                  const disabled = presetDisabled || taken || past
                   const isSelected = time === selectedTime
                   return (
                     <button
@@ -382,7 +391,7 @@ function WhenPanel({
                       type="button"
                       disabled={disabled}
                       onClick={() => onSelectTime(time)}
-                      title={taken ? 'Already booked' : undefined}
+                      title={taken ? 'Already booked' : past ? 'Time has passed' : undefined}
                     >
                       {time}
                     </button>
@@ -525,16 +534,26 @@ export default function BookAppointmentPage({
   const [toast, setToast] = useState('')
   const userId = session?.user?.id
 
-  const today = useMemo(() => new Date(), [])
-  const [cursor, setCursor] = useState({
-    year: today.getFullYear(),
-    month: today.getMonth(),
+  const [now, setNow] = useState(() => new Date())
+  const [cursor, setCursor] = useState(() => {
+    const today = new Date()
+    return {
+      year: today.getFullYear(),
+      month: today.getMonth(),
+    }
   })
 
   const [submitState, setSubmitState] = useState({ status: 'idle', message: '' })
 
   useEffect(() => {
     clearBookingDraft()
+  }, [])
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      setNow(new Date())
+    }, 30000)
+    return () => window.clearInterval(intervalId)
   }, [])
 
   // Fetch barbers from DB
@@ -656,14 +675,14 @@ export default function BookAppointmentPage({
     slotsKey && takenSlotsKey === slotsKey ? takenSlotsData : new Set()
 
   const calendarRows = useMemo(
-    () => buildCalendar(cursor.year, cursor.month, today),
-    [cursor.year, cursor.month, today],
+    () => buildCalendar(cursor.year, cursor.month, now),
+    [cursor.year, cursor.month, now],
   )
   const monthLabel = monthLabelOf(cursor.year, cursor.month)
 
   const canGoBack =
-    cursor.year > today.getFullYear() ||
-    (cursor.year === today.getFullYear() && cursor.month > today.getMonth())
+    cursor.year > now.getFullYear() ||
+    (cursor.year === now.getFullYear() && cursor.month > now.getMonth())
 
   const service = useMemo(() => {
     if (services.length === 0) return null
@@ -682,6 +701,12 @@ export default function BookAppointmentPage({
   const isReady = Boolean(
     service && barber && selectedDate && selectedTime && session?.user?.id,
   )
+
+  useEffect(() => {
+    if (selectedTime && isPastTimeSlot(selectedDate, selectedTime, now)) {
+      setSelectedTime(null)
+    }
+  }, [selectedDate, selectedTime, now])
 
   const handleSelectDay = (day, label, date) => {
     setSelectedDay(day)
@@ -802,6 +827,7 @@ export default function BookAppointmentPage({
           <WhenPanel
             selectedBarberName={barber?.fullname || ''}
             selectedDay={selectedDay}
+            selectedDate={selectedDate}
             selectedTime={selectedTime}
             onSelectDay={handleSelectDay}
             onSelectTime={setSelectedTime}
@@ -811,6 +837,7 @@ export default function BookAppointmentPage({
             onNextMonth={handleNextMonth}
             canGoBack={canGoBack}
             takenSlots={takenSlots}
+            now={now}
           />
           <NotesPanel value={notes} onChange={setNotes} />
         </div>
