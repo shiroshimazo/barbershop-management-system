@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase.js'
 import ConfirmDialog from './ConfirmDialog.jsx'
 import Toast from '../components/Toast.jsx'
@@ -39,12 +39,64 @@ const PRESET_TOGGLES = {
   },
 }
 
-const stats = [
-  { id: 'tier', icon: 'star', value: 'Gold', label: 'Member tier', variant: 'gold' },
-  { id: 'delivery', icon: 'bell', value: '3', label: 'Delivery rules' },
-  { id: 'privacy', icon: 'shield', value: 'Standard', label: 'Privacy posture' },
-  { id: 'sessions', icon: 'device', value: '2', label: 'Active sessions' },
-]
+const EMPTY_SETTINGS = {}
+
+function tierLabel(tier) {
+  if (!tier) return 'Silver'
+  return tier[0].toUpperCase() + tier.slice(1)
+}
+
+function formatDateTime(iso) {
+  if (!iso) return '-'
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return '-'
+  return new Intl.DateTimeFormat(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(date)
+}
+
+function formatDate(iso) {
+  if (!iso) return '-'
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return '-'
+  return new Intl.DateTimeFormat(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  }).format(date)
+}
+
+function formatMoney(cents) {
+  if (typeof cents !== 'number') return '-'
+  return `$${(cents / 100).toFixed(2)}`
+}
+
+function toggleText(value) {
+  return value ? 'On' : 'Off'
+}
+
+function emailStatus(user) {
+  if (user?.email_confirmed_at || user?.confirmed_at) return 'Verified'
+  return 'Needs confirmation'
+}
+
+function mapCustomerRow(data, session) {
+  const settings = data?.settings && typeof data.settings === 'object' ? data.settings : {}
+  return {
+    id: data?.id || session?.user?.id || '',
+    name: data?.fullname || session?.user?.email?.split('@')[0] || '',
+    email: data?.email || session?.user?.email || '',
+    phone: data?.phone || '',
+    tier: data?.tier || 'silver',
+    loyaltyPoints: data?.loyalty_points || 0,
+    memberSince: data?.member_since || data?.created_at || session?.user?.created_at || null,
+    updatedAt: data?.updated_at || null,
+    settings,
+  }
+}
 
 const tabs = [
   { id: 'general', label: 'General', count: 6 },
@@ -656,9 +708,15 @@ function DetailPanel({
   const detail = item.detail
   const tertiaryText = detail.tertiary
   const isThemeItem = item.isTheme
-  const aValue = detail.a.includes('{theme}')
+  const aValue = detail.a?.includes('{theme}')
     ? detail.a.replace('{theme}', theme === 'dark' ? 'Dark' : 'Light')
     : detail.a
+  const rows = detail.rows || [
+    { label: 'Primary', value: aValue },
+    { label: 'Currency', value: detail.b },
+    { label: 'Format', value: detail.c },
+    { label: 'Week start', value: detail.d },
+  ]
 
   return (
     <aside className="st-detail" aria-label="Settings detail">
@@ -667,22 +725,12 @@ function DetailPanel({
       <p className="st-detail-sub">{detail.sub}</p>
 
       <dl className="st-dl">
-        <div className="st-row">
-          <dt>Primary</dt>
-          <dd>{aValue}</dd>
-        </div>
-        <div className="st-row">
-          <dt>Currency</dt>
-          <dd>{detail.b}</dd>
-        </div>
-        <div className="st-row">
-          <dt>Format</dt>
-          <dd>{detail.c}</dd>
-        </div>
-        <div className="st-row">
-          <dt>Week start</dt>
-          <dd>{detail.d}</dd>
-        </div>
+        {rows.map((row) => (
+          <div className="st-row" key={row.label}>
+            <dt>{row.label}</dt>
+            <dd>{row.value == null || row.value === '' ? '-' : row.value}</dd>
+          </div>
+        ))}
       </dl>
 
       <div className="st-quick">
@@ -767,7 +815,7 @@ function DetailPanel({
       )}
 
       <p className="st-note">
-        Save changes syncs your presets and theme back to your customer profile.
+        Settings sync with the signed-in customer row and current Supabase session.
       </p>
     </aside>
   )
@@ -781,6 +829,15 @@ export default function SettingsPage({
   session,
 }) {
   const userId = session?.user?.id
+  const [customer, setCustomer] = useState(() => mapCustomerRow(null, session))
+  const [settingsFacts, setSettingsFacts] = useState({
+    favoriteBarber: null,
+    latestVisit: null,
+    nextAppointment: null,
+    visitsCount: 0,
+    upcomingCount: 0,
+  })
+  const [factsRefresh, setFactsRefresh] = useState(0)
   const [activeTab, setActiveTab] = useState('general')
   const [activeChip, setActiveChip] = useState('all')
   const [query, setQuery] = useState('')
@@ -800,38 +857,441 @@ export default function SettingsPage({
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [deleteConfirmEmail, setDeleteConfirmEmail] = useState('')
   const [deleteSaving, setDeleteSaving] = useState(false)
+  const applyCustomerRow = useCallback(
+    (data) => {
+      const nextCustomer = mapCustomerRow(data, session)
+      const settings = nextCustomer.settings || {}
+      setCustomer(nextCustomer)
+      if (settings.toggles && typeof settings.toggles === 'object') {
+        setToggles({ ...DEFAULT_TOGGLES, ...settings.toggles })
+      }
+      if (typeof settings.preset === 'string') {
+        setPreset(settings.preset)
+      }
+    },
+    [session],
+  )
 
-  // Hydrate from customers.settings on mount
   useEffect(() => {
     if (!userId) return undefined
     let cancelled = false
     supabase
       .from('customers')
-      .select('settings')
+      .select('id, fullname, email, phone, tier, loyalty_points, member_since, updated_at, settings')
       .eq('id', userId)
       .single()
-      .then(({ data }) => {
-        if (cancelled || !data?.settings) return
-        const s = data.settings || {}
-        if (s.toggles && typeof s.toggles === 'object') {
-          setToggles({ ...DEFAULT_TOGGLES, ...s.toggles })
+      .then(({ data, error }) => {
+        if (cancelled) return
+        if (error) {
+          setToast(`Couldn't load settings: ${error.message}`)
+          return
         }
-        if (typeof s.preset === 'string') setPreset(s.preset)
+        if (data) applyCustomerRow(data)
       })
     return () => {
       cancelled = true
     }
-  }, [userId])
+  }, [userId, applyCustomerRow])
 
-  const items = itemsByTab[activeTab]
+  useEffect(() => {
+    if (!userId) return undefined
+    let cancelled = false
+
+    Promise.all([
+      supabase
+        .from('favorites')
+        .select('barber:barbers ( id, fullname, specialty, location )')
+        .eq('customer_id', userId)
+        .order('created_at', { ascending: true })
+        .limit(1),
+      supabase
+        .from('visits')
+        .select(
+          'id, service, visited_at, location, price_cents, rating, barber:barbers ( fullname, location )',
+          { count: 'exact' },
+        )
+        .eq('customer_id', userId)
+        .order('visited_at', { ascending: false })
+        .limit(1),
+      supabase
+        .from('appointments')
+        .select(
+          'id, service, scheduled_at, duration_minutes, location, price_cents, status, barber:barbers ( fullname, location )',
+          { count: 'exact' },
+        )
+        .eq('customer_id', userId)
+        .eq('status', 'scheduled')
+        .gte('scheduled_at', new Date().toISOString())
+        .order('scheduled_at', { ascending: true })
+        .limit(1),
+    ]).then(([favoriteRes, visitsRes, upcomingRes]) => {
+      if (cancelled) return
+
+      setSettingsFacts({
+        favoriteBarber: favoriteRes.data?.[0]?.barber || null,
+        latestVisit: visitsRes.data?.[0] || null,
+        nextAppointment: upcomingRes.data?.[0] || null,
+        visitsCount: visitsRes.count || 0,
+        upcomingCount: upcomingRes.count || 0,
+      })
+    })
+
+    return () => {
+      cancelled = true
+    }
+  }, [userId, factsRefresh])
+
+  useEffect(() => {
+    if (!userId) return undefined
+
+    const channel = supabase
+      .channel(`customer-settings-${userId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'customers', filter: `id=eq.${userId}` },
+        (payload) => {
+          if (payload.new) applyCustomerRow(payload.new)
+        },
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'appointments', filter: `customer_id=eq.${userId}` },
+        () => {
+          setFactsRefresh((tick) => tick + 1)
+        },
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'visits', filter: `customer_id=eq.${userId}` },
+        () => {
+          setFactsRefresh((tick) => tick + 1)
+        },
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'favorites', filter: `customer_id=eq.${userId}` },
+        () => {
+          setFactsRefresh((tick) => tick + 1)
+        },
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [userId, applyCustomerRow])
+
+  const settings = customer.settings || EMPTY_SETTINGS
+  const latestVisit = settingsFacts.latestVisit
+  const nextAppointment = settingsFacts.nextAppointment
+  const favoriteBarber = settingsFacts.favoriteBarber
+  const emailState = emailStatus(session?.user)
+  const lastSignIn = formatDateTime(session?.user?.last_sign_in_at)
+  const deliveryRuleCount = ['t-reminders', 't-pdf', 't-quiet'].filter((id) => toggles[id]).length
+  const defaultBarber =
+    settings.default_barber ||
+    favoriteBarber?.fullname ||
+    nextAppointment?.barber?.fullname ||
+    latestVisit?.barber?.fullname ||
+    'Not set'
+  const defaultService =
+    settings.default_service || nextAppointment?.service || latestVisit?.service || 'Not set'
+  const quietHours = settings.quiet_hours || '10:00 PM - 8:00 AM'
+  const exportRange = settings.export_range || 'last 12 months'
+  const defaultTip = settings.default_tip_percent ? `${settings.default_tip_percent}%` : 'Not saved'
+
+  const liveItemsByTab = useMemo(() => {
+    const nextBookingText = nextAppointment
+      ? `${nextAppointment.service} · ${formatDateTime(nextAppointment.scheduled_at)}`
+      : 'No upcoming booking'
+    const latestVisitText = latestVisit
+      ? `${latestVisit.service} · ${formatDate(latestVisit.visited_at)}`
+      : 'No visits yet'
+    const smsState = customer.phone ? 'SMS available' : 'No phone saved'
+    const emailReceiptState = customer.email ? 'Email available' : 'No email saved'
+    const mapItem = (item) => {
+      const copy = { ...item, detail: { ...item.detail } }
+      switch (item.id) {
+        case 'region':
+          return {
+            ...copy,
+            pills: [
+              { label: settings.locale || 'English (US)', variant: 'gold' },
+              { label: settings.currency || 'USD', variant: 'soft' },
+              { label: settings.hour_cycle || '12-hour', variant: 'soft' },
+            ],
+            detail: {
+              ...copy.detail,
+              rows: [
+                { label: 'Language', value: settings.locale || 'English (US)' },
+                { label: 'Currency', value: settings.currency || 'USD' },
+                { label: 'Time format', value: settings.hour_cycle || '12-hour' },
+                { label: 'Week start', value: settings.week_start || 'Monday' },
+              ],
+            },
+          }
+        case 'quick':
+          return {
+            ...copy,
+            pills: [
+              { label: defaultBarber, variant: defaultBarber === 'Not set' ? 'soft' : 'gold' },
+              { label: defaultService, variant: defaultService === 'Not set' ? 'soft' : 'gold' },
+            ],
+            detail: {
+              ...copy.detail,
+              rows: [
+                { label: 'Default barber', value: defaultBarber },
+                { label: 'Default service', value: defaultService },
+                { label: 'Next booking', value: nextBookingText },
+                { label: 'Confirm first', value: toggles['t-quick'] ? 'Yes' : 'No' },
+              ],
+            },
+          }
+        case 'theme':
+          return {
+            ...copy,
+            pills: [
+              { label: theme === 'dark' ? 'Dark' : 'Light', variant: 'gold' },
+              { label: settings.reduced_motion ? 'Reduced motion' : 'Motion on', variant: 'soft' },
+            ],
+            detail: {
+              ...copy.detail,
+              rows: [
+                { label: 'Current theme', value: theme === 'dark' ? 'Dark' : 'Light' },
+                { label: 'Saved theme', value: settings.theme || theme || 'light' },
+                { label: 'High contrast', value: toggleText(settings.high_contrast) },
+                { label: 'Reduced motion', value: toggleText(settings.reduced_motion) },
+              ],
+            },
+          }
+        case 'reminders':
+          return {
+            ...copy,
+            pills: [
+              { label: `${settingsFacts.upcomingCount} upcoming`, variant: settingsFacts.upcomingCount ? 'gold' : 'soft' },
+              { label: toggles['t-reminders'] ? 'On' : 'Off', variant: toggles['t-reminders'] ? 'ok' : 'soft' },
+            ],
+            detail: {
+              ...copy.detail,
+              rows: [
+                { label: 'Reminder status', value: toggleText(toggles['t-reminders']) },
+                { label: 'Next booking', value: nextBookingText },
+                { label: 'Email', value: emailReceiptState },
+                { label: 'SMS', value: smsState },
+              ],
+            },
+          }
+        case 'pdf':
+          return {
+            ...copy,
+            pills: [
+              { label: emailReceiptState, variant: customer.email ? 'ok' : 'soft' },
+              { label: `${settingsFacts.visitsCount} visits`, variant: settingsFacts.visitsCount ? 'gold' : 'soft' },
+            ],
+            detail: {
+              ...copy.detail,
+              rows: [
+                { label: 'Email receipts', value: customer.email ? 'On' : 'No email saved' },
+                { label: 'SMS receipts', value: customer.phone ? 'Available' : 'No phone saved' },
+                { label: 'Completed visits', value: settingsFacts.visitsCount },
+                { label: 'Latest visit', value: latestVisitText },
+              ],
+            },
+          }
+        case 'quiet':
+          return {
+            ...copy,
+            pills: [
+              { label: quietHours, variant: 'gold' },
+              { label: toggles['t-quiet'] ? 'On' : 'Off', variant: toggles['t-quiet'] ? 'ok' : 'soft' },
+            ],
+            detail: {
+              ...copy.detail,
+              rows: [
+                { label: 'Quiet hours', value: quietHours },
+                { label: 'Status', value: toggleText(toggles['t-quiet']) },
+                { label: 'Security alerts', value: 'Always allowed' },
+                { label: 'Marketing', value: toggles['t-mkt'] ? 'Allowed outside quiet hours' : 'Off' },
+              ],
+            },
+          }
+        case 'mkt':
+          return {
+            ...copy,
+            pills: [
+              { label: toggles['t-mkt'] ? 'Marketing on' : 'Marketing off', variant: toggles['t-mkt'] ? 'gold' : 'soft' },
+              { label: tierLabel(customer.tier), variant: 'gold' },
+            ],
+            detail: {
+              ...copy.detail,
+              rows: [
+                { label: 'Email offers', value: customer.email && toggles['t-mkt'] ? 'On' : 'Off' },
+                { label: 'SMS offers', value: customer.phone && toggles['t-mkt'] ? 'On' : 'Off' },
+                { label: 'Member tier', value: tierLabel(customer.tier) },
+                { label: 'Receipts', value: 'Always transactional' },
+              ],
+            },
+          }
+        case 'analytics':
+          return {
+            ...copy,
+            pills: [
+              { label: toggles['t-analytics'] ? 'Analytics on' : 'Analytics off', variant: toggles['t-analytics'] ? 'ok' : 'soft' },
+              { label: toggles['t-export'] ? 'Export on' : 'Export off', variant: 'soft' },
+            ],
+            detail: {
+              ...copy.detail,
+              rows: [
+                { label: 'Anonymous analytics', value: toggleText(toggles['t-analytics']) },
+                { label: 'Personalized ads', value: 'Off' },
+                { label: 'Export permission', value: toggleText(toggles['t-export']) },
+                { label: 'Customer ID', value: customer.id },
+              ],
+            },
+          }
+        case 'alerts':
+          return {
+            ...copy,
+            pills: [
+              { label: toggles['t-alerts'] ? 'Alerts on' : 'Alerts off', variant: toggles['t-alerts'] ? 'gold' : 'soft' },
+              { label: emailState, variant: emailState === 'Verified' ? 'ok' : 'warn' },
+            ],
+            detail: {
+              ...copy.detail,
+              rows: [
+                { label: 'Alerts', value: toggleText(toggles['t-alerts']) },
+                { label: 'Channels', value: customer.email ? 'In-app + email' : 'In-app only' },
+                { label: 'Last sign-in', value: lastSignIn },
+                { label: 'Email status', value: emailState },
+              ],
+            },
+          }
+        case 'card':
+          return {
+            ...copy,
+            pills: [
+              { label: 'No saved card', variant: 'soft' },
+              { label: customer.email || 'No email', variant: customer.email ? 'gold' : 'soft' },
+            ],
+            detail: {
+              ...copy.detail,
+              rows: [
+                { label: 'Primary card', value: 'No saved card' },
+                { label: 'Payment storage', value: 'Not configured' },
+                { label: 'Customer email', value: customer.email },
+                { label: 'Receipt records', value: settingsFacts.visitsCount },
+              ],
+            },
+          }
+        case 'tip':
+          return {
+            ...copy,
+            pills: [
+              { label: defaultTip, variant: defaultTip === 'Not saved' ? 'soft' : 'gold' },
+              { label: toggleText(toggles['t-tip']), variant: 'soft' },
+            ],
+            detail: {
+              ...copy.detail,
+              rows: [
+                { label: 'Default tip', value: defaultTip },
+                { label: 'Auto-fill', value: toggleText(toggles['t-tip']) },
+                { label: 'Latest rating', value: latestVisit?.rating ? `${latestVisit.rating}/5` : '-' },
+                { label: 'Checkout', value: 'Editable in store' },
+              ],
+            },
+          }
+        case 'export':
+          return {
+            ...copy,
+            pills: [
+              { label: `${settingsFacts.visitsCount} visits`, variant: settingsFacts.visitsCount ? 'gold' : 'soft' },
+              { label: 'CSV', variant: 'soft' },
+            ],
+            detail: {
+              ...copy.detail,
+              rows: [
+                { label: 'Default range', value: exportRange },
+                { label: 'Completed visits', value: settingsFacts.visitsCount },
+                { label: 'Latest total', value: latestVisit ? formatMoney(latestVisit.price_cents) : '-' },
+                { label: 'Email delivery', value: customer.email ? 'Available' : 'No email saved' },
+              ],
+            },
+          }
+        case 'support':
+          return {
+            ...copy,
+            detail: {
+              ...copy.detail,
+              rows: [
+                { label: 'Support hours', value: '10 AM - 6 PM' },
+                { label: 'Support email', value: 'support@bladeco.example' },
+                { label: 'Your email', value: customer.email },
+                { label: 'Latest visit', value: latestVisitText },
+              ],
+            },
+          }
+        case 'about':
+          return {
+            ...copy,
+            pills: [
+              { label: `v${packageJson.version}`, variant: 'soft' },
+              { label: customer.id ? 'Signed in' : 'Guest', variant: customer.id ? 'gold' : 'soft' },
+            ],
+            detail: {
+              ...copy.detail,
+              rows: [
+                { label: 'App version', value: packageJson.version },
+                { label: 'Signed-in user', value: customer.id },
+                { label: 'Member since', value: formatDate(customer.memberSince) },
+                { label: 'Profile sync', value: formatDateTime(customer.updatedAt) },
+              ],
+            },
+          }
+        default:
+          return copy
+      }
+    }
+
+    return Object.fromEntries(
+      Object.entries(itemsByTab).map(([key, list]) => [key, list.map(mapItem)]),
+    )
+  }, [
+    customer,
+    defaultBarber,
+    defaultService,
+    defaultTip,
+    emailState,
+    exportRange,
+    lastSignIn,
+    latestVisit,
+    nextAppointment,
+    quietHours,
+    settings,
+    settingsFacts.upcomingCount,
+    settingsFacts.visitsCount,
+    theme,
+    toggles,
+  ])
+
+  const liveStats = [
+    { id: 'tier', icon: 'star', value: tierLabel(customer.tier), label: 'Member tier', variant: 'gold' },
+    { id: 'delivery', icon: 'bell', value: deliveryRuleCount, label: 'Delivery rules' },
+    { id: 'privacy', icon: 'shield', value: preset, label: 'Privacy posture' },
+    { id: 'sessions', icon: 'device', value: '1', label: 'Active session' },
+  ]
+
+  const items = liveItemsByTab[activeTab]
   const selectedId = selection[activeTab]
 
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase()
     return items.filter((item) => {
       const matchFilter = activeChip === 'all' || item.filter === activeChip
+      const rowText = (item.detail.rows || [])
+        .map((row) => `${row.label} ${row.value}`)
+        .join(' ')
       const haystack =
-        `${item.title} ${item.sub} ${item.detail.a} ${item.detail.b} ${item.detail.c} ${item.detail.d}`.toLowerCase()
+        `${item.title} ${item.sub} ${item.detail.a || ''} ${item.detail.b || ''} ${item.detail.c || ''} ${item.detail.d || ''} ${rowText}`.toLowerCase()
       const matchQuery = !q || haystack.includes(q)
       return matchFilter && matchQuery
     })
@@ -881,9 +1341,68 @@ export default function SettingsPage({
     }
   }
 
-  const onAction = (item, kind) => {
+  const mergeLocalSettings = (patch) => {
+    setCustomer((prev) => ({
+      ...prev,
+      settings: {
+        ...(prev.settings || {}),
+        ...patch,
+      },
+    }))
+  }
+
+  const saveSettingPatch = async (patch, message) => {
+    if (!userId) return
+    const { error } = await supabase.rpc('merge_settings', { patch })
+    if (error) {
+      setToast(`Couldn't save setting: ${error.message}`)
+      return
+    }
+    mergeLocalSettings(patch)
+    setToast(message)
+  }
+
+  const persistToggles = async (nextToggles, message) => {
+    setToggles(nextToggles)
+    const { error } = await supabase.rpc('merge_settings', {
+      patch: {
+        toggles: nextToggles,
+        preset,
+        theme,
+      },
+    })
+    if (error) {
+      setDirty(true)
+      setToast(`Couldn't save setting: ${error.message}`)
+      return
+    }
+    setDirty(false)
+    setToast(message)
+  }
+
+  const onAction = async (item, kind) => {
     if (item.isTheme && kind === 'primary') {
       onThemeChange(theme === 'dark' ? 'light' : 'dark')
+      await saveSettingPatch(
+        { theme: theme === 'dark' ? 'light' : 'dark' },
+        'Theme preference saved.',
+      )
+      return
+    }
+    if (item.id === 'region') {
+      await saveSettingPatch(
+        {
+          locale: 'English (US)',
+          currency: 'USD',
+          hour_cycle: '12-hour',
+          week_start: 'Monday',
+        },
+        kind === 'secondary' ? 'Region reset to defaults.' : 'Region preferences saved.',
+      )
+      return
+    }
+    if (item.id === 'quick') {
+      onNavigate?.('profile')
       return
     }
     if (item.id === 'reminders' && kind === 'secondary') {
@@ -895,22 +1414,100 @@ export default function SettingsPage({
       })
       return
     }
-    if (item.id === 'sessions' && kind === 'primary') {
-      return handleSignOutAll()
+    if (item.id === 'reminders' && kind === 'primary') {
+      await persistToggles({ ...toggles, 't-reminders': true }, 'Appointment reminders enabled.')
+      return
+    }
+    if (item.id === 'pdf') {
+      onNavigate?.('history')
+      return
+    }
+    if (item.id === 'quiet') {
+      if (kind === 'primary') {
+        await saveSettingPatch(
+          { quiet_hours: quietHours, toggles: { ...toggles, 't-quiet': true } },
+          'Quiet hours saved.',
+        )
+        setToggles((prev) => ({ ...prev, 't-quiet': true }))
+      } else {
+        setToast(`Quiet hours: ${quietHours}. Security alerts still bypass quiet hours.`)
+      }
+      return
+    }
+    if (item.id === 'mkt') {
+      await persistToggles(
+        { ...toggles, 't-mkt': !toggles['t-mkt'] },
+        toggles['t-mkt'] ? 'Marketing messages disabled.' : 'Marketing messages enabled.',
+      )
+      return
+    }
+    if (item.id === 'analytics') {
+      if (kind === 'secondary') {
+        onNavigate?.('history')
+        return
+      }
+      await persistToggles(
+        { ...toggles, 't-analytics': !toggles['t-analytics'] },
+        toggles['t-analytics'] ? 'Analytics sharing disabled.' : 'Analytics sharing enabled.',
+      )
+      return
+    }
+    if (item.id === 'alerts') {
+      if (kind === 'secondary') {
+        const email = customer.email || session?.user?.email
+        if (!email) {
+          setToast('No email address is saved for password recovery.')
+          return
+        }
+        const { error } = await supabase.auth.resetPasswordForEmail(email)
+        setToast(error ? `Couldn't send reset email: ${error.message}` : 'Password reset email sent.')
+        return
+      }
+      setToast(`Last sign-in: ${lastSignIn}. Active sessions: 1 current session.`)
+      return
+    }
+    if (item.id === 'card') {
+      setToast('No payment method table is configured yet. Receipts still use your visit history.')
+      return
+    }
+    if (item.id === 'tip') {
+      if (kind === 'secondary') {
+        await persistToggles({ ...toggles, 't-tip': false }, 'Tip auto-fill disabled.')
+      } else {
+        await saveSettingPatch({ default_tip_percent: 15 }, 'Default tip saved at 15%.')
+      }
+      return
     }
     if (item.id === 'export' && kind === 'primary') {
       return onNavigate?.('history')
     }
-    if (item.id === 'receipts' && kind === 'primary') {
-      return onNavigate?.('history')
+    if (item.id === 'export' && kind === 'secondary') {
+      await saveSettingPatch({ export_range: 'last 12 months' }, 'Default export range saved.')
+      return
     }
     if (item.id === 'support' && kind === 'primary') {
-      window.location.assign('mailto:support@bladeco.example')
+      window.location.assign(
+        `mailto:support@bladeco.example?subject=${encodeURIComponent('Customer support request')}&body=${encodeURIComponent(`Customer: ${customer.name || customer.email || 'Signed-in customer'}\nEmail: ${customer.email || '-'}\n`)}`,
+      )
+      return
+    }
+    if (item.id === 'support' && kind === 'secondary') {
+      setToast('FAQ content is not configured yet. Use Start a message to contact support.')
+      return
+    }
+    if (item.id === 'about') {
+      setToast(
+        kind === 'tertiary'
+          ? `Open-source licenses are bundled with app version ${packageJson.version}.`
+          : `Blade & Co. portal version ${packageJson.version}.`,
+      )
       return
     }
     if (kind === 'secondary' && item.id === 'theme') {
-      // toggle reduced motion — not wired; just nudge save
-      nudgeSave()
+      await saveSettingPatch(
+        { reduced_motion: !settings.reduced_motion },
+        !settings.reduced_motion ? 'Reduced motion enabled.' : 'Reduced motion disabled.',
+      )
       return
     }
     nudgeSave()
@@ -928,11 +1525,14 @@ export default function SettingsPage({
     })
     if (error) {
       setSaveLabel('Save failed')
+      setToast(`Couldn't save settings: ${error.message}`)
       setTimeout(() => setSaveLabel('Save changes'), 1500)
       return
     }
+    mergeLocalSettings({ toggles, preset, theme })
     setSaveLabel('Saved')
     setDirty(false)
+    setToast('Settings saved.')
     setTimeout(() => setSaveLabel('Save changes'), 900)
   }
 
@@ -962,8 +1562,6 @@ export default function SettingsPage({
     setDeleteDialogOpen(false)
     onNavigate?.('login')
   }
-
-  const goBook = () => onNavigate?.('book')
 
   // group visible items by section, preserving order
   const sections = []
@@ -1047,15 +1645,11 @@ export default function SettingsPage({
             <Icon name="save" />
             {saveLabel}
           </button>
-          <button className="st-btn st-btn-primary" type="button" onClick={goBook}>
-            <Icon name="plus" />
-            New booking
-          </button>
         </div>
       </header>
 
       <div className="st-stats">
-        {stats.map((stat) => (
+        {liveStats.map((stat) => (
           <article className="st-stat" key={stat.id}>
             <span className={`st-stat-icon${stat.variant === 'gold' ? ' is-gold' : ''}`}>
               <Icon name={stat.icon} />
