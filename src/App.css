@@ -7213,6 +7213,11 @@
   padding: 28px;
 }
 
+.admin-main .customer-icon {
+  display: block;
+  flex: 0 0 auto;
+}
+
 .admin-mobile-menu {
   display: none;
 }
@@ -7355,8 +7360,21 @@
 }
 
 .admin-stat-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   width: 42px;
   height: 42px;
+  padding: 0;
+  line-height: 0;
+}
+
+.admin-stat-icon .customer-icon {
+  display: block;
+  width: 19px;
+  height: 19px;
+  margin: auto;
+  transform: none;
 }
 
 .admin-stat-card.is-gold .admin-stat-icon,
@@ -7383,7 +7401,7 @@
   color: var(--ink);
 }
 
-.admin-stat-card span {
+.admin-stat-card > div > span {
   display: block;
   margin-top: 5px;
   color: var(--muted);

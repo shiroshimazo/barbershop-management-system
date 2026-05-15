@@ -1,4 +1,24 @@
 import { useEffect, useMemo, useState } from 'react'
+import {
+  FiBell,
+  FiCalendar,
+  FiClock,
+  FiDollarSign,
+  FiFileText,
+  FiGift,
+  FiHome,
+  FiLogOut,
+  FiMenu,
+  FiRefreshCw,
+  FiScissors,
+  FiSettings,
+  FiSliders,
+  FiStar,
+  FiUser,
+  FiUserPlus,
+  FiUsers,
+  FiX,
+} from 'react-icons/fi'
 import ConfirmDialog from '../Customer/ConfirmDialog.jsx'
 import { supabase } from '../lib/supabase.js'
 
@@ -49,139 +69,30 @@ const emptyDashboard = {
   recentWalkIns: [],
 }
 
-function iconPath(name) {
-  const paths = {
-    home: (
-      <>
-        <path d="m4 10 8-6 8 6" />
-        <path d="M6.5 9.5V20h11V9.5" />
-        <path d="M10 20v-6h4v6" />
-      </>
-    ),
-    calendar: (
-      <>
-        <path d="M6.5 4v3M17.5 4v3M4.75 8.25h14.5M5.75 5.75h12.5v14H5.75z" />
-        <path d="M8.75 12h2M13.25 12h2M8.75 15.25h2M13.25 15.25h2" />
-      </>
-    ),
-    dollar: (
-      <>
-        <path d="M12 3.75v16.5" />
-        <path d="M16.5 7.25c-.65-.8-1.85-1.25-3.2-1.25-2.05 0-3.55.9-3.55 2.35 0 3.45 6.95 1.9 6.95 5.55 0 1.75-1.75 2.85-4.05 2.85-1.75 0-3.35-.58-4.15-1.7" />
-      </>
-    ),
-    walkin: (
-      <>
-        <path d="M8.75 5.75a2.5 2.5 0 1 0 5 0 2.5 2.5 0 0 0-5 0Z" />
-        <path d="M7.5 20.25 9 13.5l-2.25 1.25" />
-        <path d="m11.25 10.25 2 3.25 3 .9" />
-        <path d="m12.5 20.25 1.25-5.75" />
-      </>
-    ),
-    scissors: (
-      <>
-        <circle cx="6.75" cy="7.5" r="2.25" />
-        <circle cx="6.75" cy="16.5" r="2.25" />
-        <path d="M8.75 8.55 19 17.75" />
-        <path d="M8.75 15.45 19 6.25" />
-      </>
-    ),
-    customers: (
-      <>
-        <path d="M9.75 11.75a3.25 3.25 0 1 0 0-6.5 3.25 3.25 0 0 0 0 6.5Z" />
-        <path d="M3.75 20a6 6 0 0 1 12 0" />
-        <path d="M16.25 11.75a2.65 2.65 0 1 0 0-5.3" />
-        <path d="M17.25 19.25a4.6 4.6 0 0 0-2.2-3.9" />
-      </>
-    ),
-    services: (
-      <>
-        <path d="M5.5 6.25h13" />
-        <path d="M5.5 12h13" />
-        <path d="M5.5 17.75h13" />
-        <path d="M8.25 4.5v3.5M15.75 10.25v3.5M11.25 16v3.5" />
-      </>
-    ),
-    clock: (
-      <>
-        <path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z" />
-        <path d="M12 7.5v5l3.25 2" />
-      </>
-    ),
-    refresh: (
-      <>
-        <path d="M5.75 7.75a7.25 7.25 0 1 1-.6 7.45" />
-        <path d="M5.75 3.75v4h4" />
-      </>
-    ),
-    menu: (
-      <>
-        <path d="M4.5 7h15" />
-        <path d="M4.5 12h15" />
-        <path d="M4.5 17h15" />
-      </>
-    ),
-    close: (
-      <>
-        <path d="M6.5 6.5 17.5 17.5" />
-        <path d="m17.5 6.5-11 11" />
-      </>
-    ),
-    logout: (
-      <>
-        <path d="M10 5.25H5.75v13.5H10" />
-        <path d="M13.25 8.25 17 12l-3.75 3.75" />
-        <path d="M17 12H8.75" />
-      </>
-    ),
-    user: (
-      <>
-        <path d="M12 12.5a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z" />
-        <path d="M4.75 20a7.25 7.25 0 0 1 14.5 0" />
-      </>
-    ),
-    reports: (
-      <>
-        <path d="M5.75 4.75h12.5v14.5H5.75z" />
-        <path d="M8.75 9h6.5" />
-        <path d="M8.75 12h6.5" />
-        <path d="M8.75 15h3.5" />
-      </>
-    ),
-    star: (
-      <path d="m12 4 2.35 4.75 5.25.77-3.8 3.7.9 5.22L12 15.97l-4.7 2.47.9-5.22-3.8-3.7 5.25-.77z" />
-    ),
-    gift: (
-      <>
-        <path d="M4.75 10.25h14.5v9H4.75z" />
-        <path d="M3.75 6.75h16.5v3.5H3.75z" />
-        <path d="M12 6.75v12.5" />
-        <path d="M12 6.75c-1.5-3.5-5.25-2.6-4.25.15 1 2.15 4.25-.15 4.25-.15Z" />
-        <path d="M12 6.75c1.5-3.5 5.25-2.6 4.25.15-1 2.15-4.25-.15-4.25-.15Z" />
-      </>
-    ),
-    bell: (
-      <>
-        <path d="M18.25 16.25H5.75l1.4-1.9V10a4.85 4.85 0 0 1 9.7 0v4.35z" />
-        <path d="M10 18.25a2 2 0 0 0 4 0" />
-      </>
-    ),
-    settings: (
-      <>
-        <circle cx="12" cy="12" r="2.75" />
-        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-      </>
-    ),
-  }
-  return paths[name] || paths.home
+const iconComponents = {
+  bell: FiBell,
+  calendar: FiCalendar,
+  clock: FiClock,
+  close: FiX,
+  customers: FiUsers,
+  dollar: FiDollarSign,
+  gift: FiGift,
+  home: FiHome,
+  logout: FiLogOut,
+  menu: FiMenu,
+  refresh: FiRefreshCw,
+  reports: FiFileText,
+  scissors: FiScissors,
+  services: FiSliders,
+  settings: FiSettings,
+  star: FiStar,
+  user: FiUser,
+  walkin: FiUserPlus,
 }
 
 function Icon({ name }) {
-  return (
-    <svg aria-hidden="true" className="customer-icon" viewBox="0 0 24 24" fill="none">
-      {iconPath(name)}
-    </svg>
-  )
+  const IconComponent = iconComponents[name] || FiHome
+  return <IconComponent aria-hidden="true" className="customer-icon" focusable="false" />
 }
 
 function browserTimeZone() {
