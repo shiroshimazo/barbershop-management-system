@@ -2,12 +2,36 @@ import { useEffect, useMemo, useState } from 'react'
 import ConfirmDialog from '../Customer/ConfirmDialog.jsx'
 import { supabase } from '../lib/supabase.js'
 
-const adminNav = [
-  { id: 'overview', icon: 'home', label: 'Overview' },
-  { id: 'bookings', icon: 'calendar', label: "Today's bookings" },
-  { id: 'revenue', icon: 'dollar', label: 'Revenue' },
-  { id: 'walkins', icon: 'walkin', label: 'Walk-ins' },
-  { id: 'availability', icon: 'scissors', label: 'Barber availability' },
+const adminNavSections = [
+  {
+    items: [
+      { id: 'dashboard', target: 'overview', icon: 'home', label: 'Dashboard' },
+      { id: 'appointments', target: 'bookings', icon: 'calendar', label: 'Appointments' },
+      { id: 'customers', target: 'overview', icon: 'customers', label: 'Customers' },
+      { id: 'barbers', target: 'availability', icon: 'scissors', label: 'Barbers' },
+      { id: 'services', target: 'overview', icon: 'services', label: 'Services' },
+      { id: 'schedule', target: 'availability', icon: 'clock', label: 'Schedule' },
+    ],
+  },
+  {
+    label: 'REVENUE',
+    items: [
+      { id: 'transactions', target: 'revenue', icon: 'dollar', label: 'Transactions' },
+      { id: 'reports', target: 'revenue', icon: 'reports', label: 'Reports' },
+    ],
+  },
+  {
+    label: 'ENGAGE',
+    items: [
+      { id: 'loyalty', target: 'overview', icon: 'star', label: 'Loyalty' },
+      { id: 'perks', target: 'overview', icon: 'gift', label: 'Perks' },
+      { id: 'notifications', target: 'overview', icon: 'bell', label: 'Notifications' },
+    ],
+  },
+  {
+    divider: true,
+    items: [{ id: 'settings', target: 'overview', icon: 'settings', label: 'Settings' }],
+  },
 ]
 
 const emptyDashboard = {
@@ -62,6 +86,22 @@ function iconPath(name) {
         <path d="M8.75 15.45 19 6.25" />
       </>
     ),
+    customers: (
+      <>
+        <path d="M9.75 11.75a3.25 3.25 0 1 0 0-6.5 3.25 3.25 0 0 0 0 6.5Z" />
+        <path d="M3.75 20a6 6 0 0 1 12 0" />
+        <path d="M16.25 11.75a2.65 2.65 0 1 0 0-5.3" />
+        <path d="M17.25 19.25a4.6 4.6 0 0 0-2.2-3.9" />
+      </>
+    ),
+    services: (
+      <>
+        <path d="M5.5 6.25h13" />
+        <path d="M5.5 12h13" />
+        <path d="M5.5 17.75h13" />
+        <path d="M8.25 4.5v3.5M15.75 10.25v3.5M11.25 16v3.5" />
+      </>
+    ),
     clock: (
       <>
         <path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z" />
@@ -98,6 +138,38 @@ function iconPath(name) {
       <>
         <path d="M12 12.5a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z" />
         <path d="M4.75 20a7.25 7.25 0 0 1 14.5 0" />
+      </>
+    ),
+    reports: (
+      <>
+        <path d="M5.75 4.75h12.5v14.5H5.75z" />
+        <path d="M8.75 9h6.5" />
+        <path d="M8.75 12h6.5" />
+        <path d="M8.75 15h3.5" />
+      </>
+    ),
+    star: (
+      <path d="m12 4 2.35 4.75 5.25.77-3.8 3.7.9 5.22L12 15.97l-4.7 2.47.9-5.22-3.8-3.7 5.25-.77z" />
+    ),
+    gift: (
+      <>
+        <path d="M4.75 10.25h14.5v9H4.75z" />
+        <path d="M3.75 6.75h16.5v3.5H3.75z" />
+        <path d="M12 6.75v12.5" />
+        <path d="M12 6.75c-1.5-3.5-5.25-2.6-4.25.15 1 2.15 4.25-.15 4.25-.15Z" />
+        <path d="M12 6.75c1.5-3.5 5.25-2.6 4.25.15-1 2.15-4.25-.15-4.25-.15Z" />
+      </>
+    ),
+    bell: (
+      <>
+        <path d="M18.25 16.25H5.75l1.4-1.9V10a4.85 4.85 0 0 1 9.7 0v4.35z" />
+        <path d="M10 18.25a2 2 0 0 0 4 0" />
+      </>
+    ),
+    settings: (
+      <>
+        <circle cx="12" cy="12" r="2.75" />
+        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
       </>
     ),
   }
@@ -169,28 +241,33 @@ function AdminSidebar({
         </button>
       </div>
 
-      <div className="customer-nav-section">
-        <p className="customer-nav-label">Admin</p>
-        <nav aria-label="Admin sections">
-          {adminNav.map((item) => (
-            <a
-              className={`customer-nav-item${activeId === item.id ? ' is-active' : ''}`}
-              href={`#admin-${item.id}`}
-              key={item.id}
-              onClick={(event) => {
-                event.preventDefault()
-                onSelect(item.id)
-              }}
-            >
-              <Icon name={item.icon} />
-              <span>{item.label}</span>
-              {item.id === 'bookings' && upcomingCount > 0 && (
-                <span className="customer-nav-badge">{upcomingCount}</span>
-              )}
-            </a>
-          ))}
-        </nav>
-      </div>
+      {adminNavSections.map((section, index) => (
+        <div
+          className={`customer-nav-section${section.divider ? ' admin-nav-separated' : ''}`}
+          key={section.label || `admin-primary-${index}`}
+        >
+          {section.label && <p className="customer-nav-label">{section.label}</p>}
+          <nav aria-label={section.label ? `${section.label} sections` : 'Admin primary sections'}>
+            {section.items.map((item) => (
+              <a
+                className={`customer-nav-item${activeId === item.id ? ' is-active' : ''}`}
+                href={`#admin-${item.target}`}
+                key={item.id}
+                onClick={(event) => {
+                  event.preventDefault()
+                  onSelect(item)
+                }}
+              >
+                <Icon name={item.icon} />
+                <span>{item.label}</span>
+                {item.id === 'appointments' && upcomingCount > 0 && (
+                  <span className="customer-nav-badge">{upcomingCount}</span>
+                )}
+              </a>
+            ))}
+          </nav>
+        </div>
+      ))}
 
       <button className="customer-logout-foot" type="button" onClick={onLogoutRequest}>
         <span className="customer-logout-icon">
@@ -227,7 +304,7 @@ function EmptyBlock({ children }) {
 export default function AdminPage({ session, onLogout }) {
   const email = session?.user?.email || 'admin'
   const timeZone = useMemo(() => browserTimeZone(), [])
-  const [activeSection, setActiveSection] = useState('overview')
+  const [activeSection, setActiveSection] = useState('dashboard')
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
   const [isLogoutDialogOpen, setIsLogoutDialogOpen] = useState(false)
   const [dashboard, setDashboard] = useState(emptyDashboard)
@@ -286,10 +363,12 @@ export default function AdminPage({ session, onLogout }) {
   ).length
   const nextAppointment = dashboard.upcomingAppointments[0]
 
-  const handleSidebarSelect = (id) => {
-    setActiveSection(id)
+  const handleSidebarSelect = (item) => {
+    setActiveSection(item.id)
     setIsSidebarOpen(false)
-    document.getElementById(`admin-${id}`)?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+    document
+      .getElementById(`admin-${item.target || item.id}`)
+      ?.scrollIntoView({ block: 'start', behavior: 'smooth' })
   }
 
   return (

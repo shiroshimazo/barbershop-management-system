@@ -841,6 +841,12 @@
   margin-top: 16px;
 }
 
+.customer-sidebar .admin-nav-separated {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(243, 239, 230, 0.14);
+}
+
 .customer-nav-label,
 .customer-eyebrow {
   margin: 0 0 10px;
