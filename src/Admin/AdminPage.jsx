@@ -1,58 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
-import {
-  FiBell,
-  FiCalendar,
-  FiClock,
-  FiDollarSign,
-  FiFileText,
-  FiGift,
-  FiHome,
-  FiLogOut,
-  FiMenu,
-  FiRefreshCw,
-  FiScissors,
-  FiSettings,
-  FiSliders,
-  FiStar,
-  FiUser,
-  FiUserPlus,
-  FiUsers,
-  FiX,
-} from 'react-icons/fi'
 import ConfirmDialog from '../Customer/ConfirmDialog.jsx'
 import { supabase } from '../lib/supabase.js'
-
-const adminNavSections = [
-  {
-    items: [
-      { id: 'dashboard', target: 'overview', icon: 'home', label: 'Dashboard' },
-      { id: 'appointments', target: 'bookings', icon: 'calendar', label: 'Appointments' },
-      { id: 'customers', target: 'overview', icon: 'customers', label: 'Customers' },
-      { id: 'barbers', target: 'availability', icon: 'scissors', label: 'Barbers' },
-      { id: 'services', target: 'overview', icon: 'services', label: 'Services' },
-      { id: 'schedule', target: 'availability', icon: 'clock', label: 'Schedule' },
-    ],
-  },
-  {
-    label: 'REVENUE',
-    items: [
-      { id: 'transactions', target: 'revenue', icon: 'dollar', label: 'Transactions' },
-      { id: 'reports', target: 'revenue', icon: 'reports', label: 'Reports' },
-    ],
-  },
-  {
-    label: 'ENGAGE',
-    items: [
-      { id: 'loyalty', target: 'overview', icon: 'star', label: 'Loyalty' },
-      { id: 'perks', target: 'overview', icon: 'gift', label: 'Perks' },
-      { id: 'notifications', target: 'overview', icon: 'bell', label: 'Notifications' },
-    ],
-  },
-  {
-    divider: true,
-    items: [{ id: 'settings', target: 'overview', icon: 'settings', label: 'Settings' }],
-  },
-]
+import { AdminSidebar, Icon } from './AdminShell.jsx'
+import { browserTimeZone } from './adminShared.js'
 
 const emptyDashboard = {
   date: null,
@@ -67,40 +17,6 @@ const emptyDashboard = {
   upcomingAppointments: [],
   barberAvailability: [],
   recentWalkIns: [],
-}
-
-const iconComponents = {
-  bell: FiBell,
-  calendar: FiCalendar,
-  clock: FiClock,
-  close: FiX,
-  customers: FiUsers,
-  dollar: FiDollarSign,
-  gift: FiGift,
-  home: FiHome,
-  logout: FiLogOut,
-  menu: FiMenu,
-  refresh: FiRefreshCw,
-  reports: FiFileText,
-  scissors: FiScissors,
-  services: FiSliders,
-  settings: FiSettings,
-  star: FiStar,
-  user: FiUser,
-  walkin: FiUserPlus,
-}
-
-function Icon({ name }) {
-  const IconComponent = iconComponents[name] || FiHome
-  return <IconComponent aria-hidden="true" className="customer-icon" focusable="false" />
-}
-
-function browserTimeZone() {
-  try {
-    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Singapore'
-  } catch {
-    return 'Asia/Singapore'
-  }
 }
 
 function normalizeDashboard(data) {
@@ -127,70 +43,6 @@ function formatTime(iso) {
     hour: 'numeric',
     minute: '2-digit',
   }).format(date)
-}
-
-function AdminSidebar({
-  activeId,
-  isOpen,
-  onClose,
-  onSelect,
-  onLogoutRequest,
-  upcomingCount,
-}) {
-  return (
-    <aside className={`customer-sidebar${isOpen ? ' is-open' : ''}`} aria-label="Admin navigation">
-      <div className="customer-brand">
-        <span className="customer-brand-mark">B</span>
-        <strong>BLADE & CO.</strong>
-        <button
-          aria-label="Close navigation"
-          className="customer-sidebar-close"
-          type="button"
-          onClick={onClose}
-        >
-          <Icon name="close" />
-        </button>
-      </div>
-
-      {adminNavSections.map((section, index) => (
-        <div
-          className={`customer-nav-section${section.divider ? ' admin-nav-separated' : ''}`}
-          key={section.label || `admin-primary-${index}`}
-        >
-          {section.label && <p className="customer-nav-label">{section.label}</p>}
-          <nav aria-label={section.label ? `${section.label} sections` : 'Admin primary sections'}>
-            {section.items.map((item) => (
-              <a
-                className={`customer-nav-item${activeId === item.id ? ' is-active' : ''}`}
-                href={`#admin-${item.target}`}
-                key={item.id}
-                onClick={(event) => {
-                  event.preventDefault()
-                  onSelect(item)
-                }}
-              >
-                <Icon name={item.icon} />
-                <span>{item.label}</span>
-                {item.id === 'appointments' && upcomingCount > 0 && (
-                  <span className="customer-nav-badge">{upcomingCount}</span>
-                )}
-              </a>
-            ))}
-          </nav>
-        </div>
-      ))}
-
-      <button className="customer-logout-foot" type="button" onClick={onLogoutRequest}>
-        <span className="customer-logout-icon">
-          <Icon name="logout" />
-        </span>
-        <span className="customer-logout-text">
-          <strong>Log out</strong>
-          <small>End admin session</small>
-        </span>
-      </button>
-    </aside>
-  )
 }
 
 function StatCard({ icon, label, value, meta, tone = 'default' }) {
@@ -275,11 +127,18 @@ export default function AdminPage({ session, onLogout }) {
   const nextAppointment = dashboard.upcomingAppointments[0]
 
   const handleSidebarSelect = (item) => {
-    setActiveSection(item.id)
     setIsSidebarOpen(false)
-    document
-      .getElementById(`admin-${item.target || item.id}`)
-      ?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+    if (item.id === 'appointments') {
+      window.location.hash = 'appointments'
+      return
+    }
+    setActiveSection(item.id)
+    window.location.hash = 'dashboard'
+    window.requestAnimationFrame(() => {
+      document
+        .getElementById(`admin-${item.target || 'overview'}`)
+        ?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+    })
   }
 
   return (
@@ -372,38 +231,6 @@ export default function AdminPage({ session, onLogout }) {
         </section>
 
         <div className="admin-grid">
-          <section className="admin-panel admin-panel-wide" id="admin-bookings">
-            <div className="admin-panel-head">
-              <div>
-                <p className="customer-eyebrow">Upcoming appointments</p>
-                <h2>Booking flow</h2>
-              </div>
-              <span>{dashboard.upcomingAppointments.length} shown</span>
-            </div>
-
-            {dashboard.upcomingAppointments.length === 0 ? (
-              <EmptyBlock>No upcoming appointments are scheduled.</EmptyBlock>
-            ) : (
-              <div className="admin-appointment-list">
-                {dashboard.upcomingAppointments.map((appointment) => (
-                  <article className="admin-appointment" key={appointment.id}>
-                    <span className="admin-appointment-time">
-                      {formatTime(appointment.scheduledAt)}
-                    </span>
-                    <div>
-                      <strong>{appointment.service}</strong>
-                      <small>
-                        {appointment.customerName || 'Customer'} with{' '}
-                        {appointment.barberName || 'Unassigned'}
-                      </small>
-                    </div>
-                    <span className="admin-chip">{appointment.status}</span>
-                  </article>
-                ))}
-              </div>
-            )}
-          </section>
-
           <section className="admin-panel" id="admin-revenue">
             <div className="admin-panel-head">
               <div>

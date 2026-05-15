@@ -7520,6 +7520,298 @@
   color: var(--muted-2);
 }
 
+.admin-booking-workspace {
+  display: grid;
+  gap: 16px;
+}
+
+.admin-booking-toolbar,
+.admin-calendar-controls,
+.admin-booking-title,
+.admin-booking-actions,
+.admin-reschedule-row,
+.admin-form-grid {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.admin-booking-toolbar,
+.admin-booking-title,
+.admin-calendar-controls {
+  justify-content: space-between;
+}
+
+.admin-segmented {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--cream-deep);
+}
+
+.admin-segmented button,
+.admin-inline-button,
+.admin-booking-actions button,
+.admin-reschedule-row button,
+.admin-tool-form button {
+  min-height: 34px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink);
+  font-size: 0.82rem;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.admin-segmented button {
+  padding: 0 12px;
+}
+
+.admin-segmented button.is-active,
+.admin-inline-button,
+.admin-tool-form button,
+.admin-reschedule-row button:first-of-type {
+  background: var(--ink);
+  color: var(--cream);
+}
+
+.admin-inline-button,
+.admin-booking-actions button,
+.admin-reschedule-row button,
+.admin-tool-form button {
+  padding: 0 12px;
+}
+
+.admin-booking-actions button,
+.admin-reschedule-row button {
+  border-color: var(--line);
+  background: var(--card);
+}
+
+.admin-booking-actions button.is-danger {
+  border-color: rgba(159, 58, 58, 0.35);
+  background: rgba(159, 58, 58, 0.1);
+  color: #9f3a3a;
+}
+
+.admin-segmented button:disabled,
+.admin-inline-button:disabled,
+.admin-booking-actions button:disabled,
+.admin-reschedule-row button:disabled,
+.admin-tool-form button:disabled {
+  opacity: 0.62;
+  cursor: wait;
+}
+
+.admin-booking-list {
+  display: grid;
+  gap: 10px;
+  max-height: 460px;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.admin-booking-card {
+  display: grid;
+  grid-template-columns: 86px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.48);
+}
+
+.admin-booking-time {
+  display: grid;
+  min-height: 58px;
+  place-items: center;
+  border-radius: 8px;
+  background: var(--ink);
+  color: var(--cream);
+  text-align: center;
+}
+
+.admin-booking-time strong {
+  font-size: 0.86rem;
+  font-weight: 950;
+}
+
+.admin-booking-time span {
+  color: rgba(243, 239, 230, 0.72);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.admin-booking-body,
+.admin-tool-form {
+  min-width: 0;
+}
+
+.admin-booking-body strong,
+.admin-calendar-event strong,
+.admin-tool-form h3 {
+  color: var(--ink);
+  font-weight: 950;
+}
+
+.admin-booking-body small,
+.admin-booking-body p,
+.admin-calendar-event small,
+.admin-calendar-event time,
+.admin-tool-form label span {
+  color: var(--muted-2);
+  font-size: 0.82rem;
+  font-weight: 750;
+}
+
+.admin-booking-body p {
+  margin: 6px 0 0;
+}
+
+.admin-status-chip.is-pending {
+  background: rgba(184, 124, 52, 0.16);
+  color: #9a6424;
+}
+
+.admin-status-chip.is-scheduled {
+  background: rgba(39, 126, 82, 0.12);
+  color: #277e52;
+}
+
+.admin-status-chip.is-cancelled {
+  background: rgba(159, 58, 58, 0.1);
+  color: #9f3a3a;
+}
+
+.admin-reschedule-row {
+  flex-wrap: wrap;
+  margin-top: 12px;
+  padding: 10px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 8px;
+  background: var(--cream-deep);
+}
+
+.admin-calendar-board {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: color-mix(in oklab, var(--card) 88%, white);
+}
+
+.admin-calendar-list {
+  display: grid;
+  gap: 8px;
+  max-height: 360px;
+  overflow: auto;
+}
+
+.admin-calendar-event {
+  display: grid;
+  grid-template-columns: 160px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--card);
+}
+
+.admin-calendar-event.is-blocked {
+  border-color: rgba(159, 58, 58, 0.18);
+  background: rgba(159, 58, 58, 0.07);
+}
+
+.admin-calendar-event > span {
+  color: var(--muted-2);
+  font-size: 0.78rem;
+  font-weight: 850;
+}
+
+.admin-schedule-tools {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.admin-tool-form {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--card);
+}
+
+.admin-tool-form h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.admin-tool-form label,
+.admin-reschedule-row label,
+.admin-calendar-controls label {
+  display: grid;
+  gap: 5px;
+}
+
+.admin-tool-form input,
+.admin-tool-form select,
+.admin-reschedule-row input,
+.admin-calendar-controls input,
+.admin-calendar-controls select {
+  min-height: 38px;
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--cream);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.86rem;
+  font-weight: 750;
+  padding: 0 10px;
+}
+
+.admin-check-row {
+  display: flex !important;
+  grid-template-columns: none;
+  align-items: center;
+}
+
+.admin-check-row input {
+  width: 18px;
+  min-height: 18px;
+}
+
+.admin-shift-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.admin-shift-list > span {
+  display: inline-flex;
+  min-height: 30px;
+  align-items: center;
+  padding: 0 10px;
+  border-radius: 8px;
+  background: var(--cream-deep);
+  color: var(--ink);
+  font-size: 0.78rem;
+  font-weight: 850;
+}
+
+.admin-shift-list > span.is-muted {
+  opacity: 0.58;
+}
+
 .admin-revenue-total {
   margin: 12px 0 8px;
   color: var(--ink);
@@ -7645,15 +7937,38 @@
     align-items: stretch;
   }
   .admin-stat-grid,
-  .admin-barber-grid {
+  .admin-barber-grid,
+  .admin-schedule-tools {
     grid-template-columns: 1fr;
   }
-  .admin-appointment {
+  .admin-appointment,
+  .admin-booking-card,
+  .admin-calendar-event {
     grid-template-columns: 1fr;
     align-items: start;
   }
   .admin-appointment-time {
     width: max-content;
+    padding: 0 12px;
+  }
+  .admin-booking-toolbar,
+  .admin-booking-title,
+  .admin-booking-actions,
+  .admin-calendar-controls,
+  .admin-reschedule-row,
+  .admin-form-grid {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .admin-booking-actions button,
+  .admin-reschedule-row button,
+  .admin-tool-form button,
+  .admin-inline-button {
+    width: 100%;
+  }
+  .admin-booking-time {
+    width: max-content;
+    min-width: 86px;
     padding: 0 12px;
   }
 }

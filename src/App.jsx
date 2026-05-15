@@ -4,6 +4,7 @@ import { supabase } from './lib/supabase.js'
 import './App.css'
 
 const AdminPage = lazy(() => import('./Admin/AdminPage.jsx'))
+const AdminAppointment = lazy(() => import('./Admin/AdminAppointment.jsx'))
 const BookAppointmentPage = lazy(() => import('./Customer/BookAppointmentPage.jsx'))
 const CustomerDashboard = lazy(() => import('./Customer/CustomerDashboard.jsx'))
 const FavouritesPage = lazy(() => import('./Customer/FavouritesPage.jsx'))
@@ -178,9 +179,14 @@ function App() {
   }
 
   if (session && userRole === 'admin') {
+    const adminPage = page === 'appointments' ? 'appointments' : 'dashboard'
     return (
       <Suspense fallback={null}>
-        <AdminPage session={session} onLogout={handleLogout} />
+        {adminPage === 'appointments' ? (
+          <AdminAppointment session={session} onLogout={handleLogout} />
+        ) : (
+          <AdminPage session={session} onLogout={handleLogout} />
+        )}
       </Suspense>
     )
   }
