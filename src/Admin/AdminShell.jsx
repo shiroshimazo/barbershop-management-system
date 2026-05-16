@@ -80,7 +80,9 @@ export function AdminSidebar({
               <a
                 className={`customer-nav-item${activeId === item.id ? ' is-active' : ''}`}
                 href={`#${
-                  item.id === 'appointments' || item.id === 'customers' ? item.id : 'dashboard'
+                  item.id === 'appointments' || item.id === 'customers' || item.id === 'barbers'
+                    ? item.id
+                    : 'dashboard'
                 }`}
                 key={item.id}
                 onClick={(event) => {

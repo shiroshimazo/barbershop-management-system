@@ -334,6 +334,10 @@ export default function AdminCustomer({ onLogout }) {
       window.location.hash = 'appointments'
       return
     }
+    if (item.id === 'barbers') {
+      window.location.hash = 'barbers'
+      return
+    }
     window.location.hash = 'dashboard'
   }
 

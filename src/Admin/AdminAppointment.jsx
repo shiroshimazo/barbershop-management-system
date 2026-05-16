@@ -335,6 +335,10 @@ export default function AdminAppointment({ session, onLogout }) {
       window.location.hash = 'customers'
       return
     }
+    if (item.id === 'barbers') {
+      window.location.hash = 'barbers'
+      return
+    }
     window.location.hash = 'dashboard'
   }
 
