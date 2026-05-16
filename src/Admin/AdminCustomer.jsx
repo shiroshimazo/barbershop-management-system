@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { createClient } from '@supabase/supabase-js'
 import {
+  RiAddLine,
   RiArrowDownSLine,
   RiArrowLeftSLine,
   RiArrowRightSLine,
@@ -54,6 +56,27 @@ const sortOptions = [
 ]
 
 const pageSize = 12
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
+
+const emptyCustomerForm = {
+  fullname: '',
+  email: '',
+  phone: '',
+  password: '',
+  tier: 'silver',
+  loyaltyPoints: '0',
+}
+
+function createSignupClient() {
+  return createClient(supabaseUrl, supabaseAnonKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false,
+    },
+  })
+}
 
 function normalizeWorkspace(data) {
   if (!data || typeof data !== 'object') return emptyCustomerWorkspace
@@ -203,6 +226,8 @@ export default function AdminCustomer({ onLogout }) {
   const [page, setPage] = useState(1)
   const [selectedIds, setSelectedIds] = useState(() => new Set())
   const [viewCustomer, setViewCustomer] = useState(null)
+  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
+  const [createForm, setCreateForm] = useState(emptyCustomerForm)
   const [editingCustomer, setEditingCustomer] = useState(null)
   const [editForm, setEditForm] = useState({
     fullname: '',
@@ -378,6 +403,15 @@ export default function AdminCustomer({ onLogout }) {
     setEditForm((current) => ({ ...current, [field]: value }))
   }
 
+  const openCreateCustomer = () => {
+    setCreateForm(emptyCustomerForm)
+    setIsCreateDialogOpen(true)
+  }
+
+  const updateCreateForm = (field, value) => {
+    setCreateForm((current) => ({ ...current, [field]: value }))
+  }
+
   const exportCsv = (rowsToExport = filteredCustomers, fileLabel = 'customers') => {
     if (rowsToExport.length === 0) return
     const header = [
@@ -438,6 +472,67 @@ export default function AdminCustomer({ onLogout }) {
 
     setEditingCustomer(null)
     setToast('Customer updated.')
+    await loadCustomers(false)
+  }
+
+  const confirmCreateCustomer = async () => {
+    const fullname = createForm.fullname.trim()
+    const emailValue = createForm.email.trim().toLowerCase()
+    const phoneValue = createForm.phone.trim()
+    const passwordValue = createForm.password
+
+    if (!fullname || !emailValue || !passwordValue) return
+
+    if (passwordValue.length < 8) {
+      setToast('Temporary password must be at least 8 characters.')
+      return
+    }
+
+    setActionBusy(true)
+    const signupClient = createSignupClient()
+    const { data, error: signupError } = await signupClient.auth.signUp({
+      email: emailValue,
+      password: passwordValue,
+      options: {
+        data: {
+          fullname,
+          phone: phoneValue || null,
+        },
+      },
+    })
+
+    if (signupError) {
+      setActionBusy(false)
+      setToast(`Could not create customer: ${signupError.message}`)
+      return
+    }
+
+    const customerId = data.user?.id
+    if (!customerId) {
+      setActionBusy(false)
+      setToast('Customer account was created, but Supabase did not return the user id.')
+      return
+    }
+
+    const { error: updateError } = await supabase.rpc('admin_update_customer', {
+      p_customer_id: customerId,
+      p_fullname: fullname,
+      p_email: emailValue,
+      p_phone: phoneValue || null,
+      p_tier: createForm.tier,
+      p_loyalty_points: Math.max(0, Number(createForm.loyaltyPoints) || 0),
+    })
+    await signupClient.auth.signOut()
+    setActionBusy(false)
+
+    if (updateError) {
+      setToast(`Customer account was created, but profile update failed: ${updateError.message}`)
+      return
+    }
+
+    setIsCreateDialogOpen(false)
+    setCreateForm(emptyCustomerForm)
+    setToast('Customer created.')
     await loadCustomers(false)
   }
 
@@ -517,6 +612,10 @@ export default function AdminCustomer({ onLogout }) {
               >
                 <RiDownload2Line aria-hidden="true" />
                 Export CSV
+              </button>
+              <button className="is-primary" type="button" onClick={openCreateCustomer}>
+                <RiAddLine aria-hidden="true" />
+                Create Customer
               </button>
             </div>
           </div>
@@ -861,6 +960,83 @@ export default function AdminCustomer({ onLogout }) {
                 {viewCustomer.lastBarberName ? ` with ${viewCustomer.lastBarberName}` : ''}
               </strong>
             </div>
+          </div>
+        </ConfirmDialog>
+      )}
+
+      {isCreateDialogOpen && (
+        <ConfirmDialog
+          title="Create customer"
+          description="Create a customer login and add them to the live customer roster."
+          cancelLabel="Cancel"
+          confirmLabel="Create customer"
+          busy={actionBusy}
+          confirmDisabled={
+            !createForm.fullname.trim() ||
+            !createForm.email.trim() ||
+            createForm.password.length < 8
+          }
+          onCancel={() => setIsCreateDialogOpen(false)}
+          onConfirm={confirmCreateCustomer}
+        >
+          <div className="admin-customer-edit-form">
+            <label>
+              <span>Full name</span>
+              <input
+                autoComplete="name"
+                type="text"
+                value={createForm.fullname}
+                onChange={(event) => updateCreateForm('fullname', event.target.value)}
+              />
+            </label>
+            <label>
+              <span>Email</span>
+              <input
+                autoComplete="email"
+                type="email"
+                value={createForm.email}
+                onChange={(event) => updateCreateForm('email', event.target.value)}
+              />
+            </label>
+            <label>
+              <span>Phone</span>
+              <input
+                autoComplete="tel"
+                type="tel"
+                value={createForm.phone}
+                onChange={(event) => updateCreateForm('phone', event.target.value)}
+              />
+            </label>
+            <label>
+              <span>Temporary password</span>
+              <input
+                autoComplete="new-password"
+                minLength="8"
+                type="password"
+                value={createForm.password}
+                onChange={(event) => updateCreateForm('password', event.target.value)}
+              />
+            </label>
+            <label>
+              <span>Tier</span>
+              <select
+                value={createForm.tier}
+                onChange={(event) => updateCreateForm('tier', event.target.value)}
+              >
+                <option value="silver">Silver / Standard</option>
+                <option value="gold">Gold</option>
+                <option value="platinum">Platinum</option>
+              </select>
+            </label>
+            <label>
+              <span>Loyalty points</span>
+              <input
+                min="0"
+                type="number"
+                value={createForm.loyaltyPoints}
+                onChange={(event) => updateCreateForm('loyaltyPoints', event.target.value)}
+              />
+            </label>
           </div>
         </ConfirmDialog>
       )}
