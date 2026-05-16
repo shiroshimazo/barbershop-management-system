@@ -331,6 +331,10 @@ export default function AdminAppointment({ session, onLogout }) {
   const handleSidebarSelect = (item) => {
     setIsSidebarOpen(false)
     if (item.id === 'appointments') return
+    if (item.id === 'customers') {
+      window.location.hash = 'customers'
+      return
+    }
     window.location.hash = 'dashboard'
   }
 

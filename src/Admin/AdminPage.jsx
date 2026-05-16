@@ -132,6 +132,10 @@ export default function AdminPage({ session, onLogout }) {
       window.location.hash = 'appointments'
       return
     }
+    if (item.id === 'customers') {
+      window.location.hash = 'customers'
+      return
+    }
     setActiveSection(item.id)
     window.location.hash = 'dashboard'
     window.requestAnimationFrame(() => {

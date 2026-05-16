@@ -79,7 +79,9 @@ export function AdminSidebar({
             {section.items.map((item) => (
               <a
                 className={`customer-nav-item${activeId === item.id ? ' is-active' : ''}`}
-                href={`#${item.id === 'appointments' ? 'appointments' : 'dashboard'}`}
+                href={`#${
+                  item.id === 'appointments' || item.id === 'customers' ? item.id : 'dashboard'
+                }`}
                 key={item.id}
                 onClick={(event) => {
                   event.preventDefault()

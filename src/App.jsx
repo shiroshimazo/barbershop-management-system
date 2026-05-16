@@ -5,6 +5,7 @@ import './App.css'
 
 const AdminPage = lazy(() => import('./Admin/AdminPage.jsx'))
 const AdminAppointment = lazy(() => import('./Admin/AdminAppointment.jsx'))
+const AdminCustomer = lazy(() => import('./Admin/AdminCustomer.jsx'))
 const BookAppointmentPage = lazy(() => import('./Customer/BookAppointmentPage.jsx'))
 const CustomerDashboard = lazy(() => import('./Customer/CustomerDashboard.jsx'))
 const FavouritesPage = lazy(() => import('./Customer/FavouritesPage.jsx'))
@@ -18,6 +19,7 @@ const LoginPage = lazy(() => import('./features/auth/LoginPage.jsx'))
 const RegisterPage = lazy(() => import('./features/auth/RegisterPage.jsx'))
 
 const AUTH_PAGES = new Set(['login', 'register', 'forgot-password'])
+const ADMIN_PAGES = new Set(['customers'])
 const CUSTOMER_PAGES = new Set([
   'dashboard',
   'book',
@@ -32,6 +34,7 @@ const CUSTOMER_PAGES = new Set([
 function getPageFromHash() {
   const hash = window.location.hash.replace('#', '')
   if (AUTH_PAGES.has(hash)) return hash
+  if (ADMIN_PAGES.has(hash)) return hash
   if (CUSTOMER_PAGES.has(hash)) return hash
   return 'login'
 }
@@ -179,11 +182,13 @@ function App() {
   }
 
   if (session && userRole === 'admin') {
-    const adminPage = page === 'appointments' ? 'appointments' : 'dashboard'
+    const adminPage = page === 'appointments' || page === 'customers' ? page : 'dashboard'
     return (
       <Suspense fallback={null}>
         {adminPage === 'appointments' ? (
           <AdminAppointment session={session} onLogout={handleLogout} />
+        ) : adminPage === 'customers' ? (
+          <AdminCustomer session={session} onLogout={handleLogout} />
         ) : (
           <AdminPage session={session} onLogout={handleLogout} />
         )}
