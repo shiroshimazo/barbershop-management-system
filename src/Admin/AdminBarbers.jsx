@@ -658,7 +658,7 @@ export default function AdminBarbers({ onLogout }) {
   const handleSidebarSelect = (item) => {
     setIsSidebarOpen(false)
     if (item.id === 'barbers') return
-    if (item.id === 'appointments' || item.id === 'customers') {
+    if (item.id === 'appointments' || item.id === 'customers' || item.id === 'services') {
       window.location.hash = item.id
       return
     }
