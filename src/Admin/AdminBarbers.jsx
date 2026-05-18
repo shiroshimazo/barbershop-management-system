@@ -658,7 +658,12 @@ export default function AdminBarbers({ onLogout }) {
   const handleSidebarSelect = (item) => {
     setIsSidebarOpen(false)
     if (item.id === 'barbers') return
-    if (item.id === 'appointments' || item.id === 'customers' || item.id === 'services') {
+    if (
+      item.id === 'appointments' ||
+      item.id === 'customers' ||
+      item.id === 'services' ||
+      item.id === 'schedule'
+    ) {
       window.location.hash = item.id
       return
     }
@@ -799,7 +804,7 @@ export default function AdminBarbers({ onLogout }) {
             </p>
           </div>
           <div className="ab-head-actions">
-            <button type="button" onClick={() => setToast('Schedule panel is not generated yet.')}>
+            <button type="button" onClick={() => (window.location.hash = 'schedule')}>
               <RiCalendarScheduleLine aria-hidden="true" />
               Schedule view
             </button>
