@@ -276,7 +276,7 @@ export default function AdminAppointment({ session, onLogout }) {
   const handleSidebarSelect = (item) => {
     setIsSidebarOpen(false)
     if (item.id === 'appointments') return
-    if (['customers', 'barbers', 'services', 'schedule'].includes(item.id)) {
+    if (['customers', 'barbers', 'services', 'schedule', 'transactions'].includes(item.id)) {
       window.location.hash = item.id
       return
     }

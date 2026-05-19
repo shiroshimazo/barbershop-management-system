@@ -23,7 +23,7 @@ const GRID_END = 19
 const HOUR_PX = 48
 const WEEK_HOUR_PX = 34
 const dayHours = Array.from({ length: GRID_END - GRID_START }, (_, index) => GRID_START + index)
-const routeIds = ['appointments', 'customers', 'barbers', 'services', 'schedule']
+const routeIds = ['appointments', 'customers', 'barbers', 'services', 'schedule', 'transactions']
 const entryKinds = [
   { id: 'booked', label: 'Booked' },
   { id: 'walkin', label: 'Walk-in' },

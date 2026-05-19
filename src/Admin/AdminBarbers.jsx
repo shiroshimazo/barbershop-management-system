@@ -662,7 +662,8 @@ export default function AdminBarbers({ onLogout }) {
       item.id === 'appointments' ||
       item.id === 'customers' ||
       item.id === 'services' ||
-      item.id === 'schedule'
+      item.id === 'schedule' ||
+      item.id === 'transactions'
     ) {
       window.location.hash = item.id
       return

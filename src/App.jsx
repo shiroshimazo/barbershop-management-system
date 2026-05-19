@@ -9,6 +9,7 @@ const AdminBarbers = lazy(() => import('./Admin/AdminBarbers.jsx'))
 const AdminCustomer = lazy(() => import('./Admin/AdminCustomer.jsx'))
 const AdminSchedule = lazy(() => import('./Admin/AdminSchedule.jsx'))
 const AdminServices = lazy(() => import('./Admin/AdminServices.jsx'))
+const AdminTransaction = lazy(() => import('./Admin/AdminTransaction.jsx'))
 const BookAppointmentPage = lazy(() => import('./Customer/BookAppointmentPage.jsx'))
 const CustomerDashboard = lazy(() => import('./Customer/CustomerDashboard.jsx'))
 const FavouritesPage = lazy(() => import('./Customer/FavouritesPage.jsx'))
@@ -22,7 +23,7 @@ const LoginPage = lazy(() => import('./features/auth/LoginPage.jsx'))
 const RegisterPage = lazy(() => import('./features/auth/RegisterPage.jsx'))
 
 const AUTH_PAGES = new Set(['login', 'register', 'forgot-password'])
-const ADMIN_PAGES = new Set(['customers', 'barbers', 'services', 'schedule'])
+const ADMIN_PAGES = new Set(['customers', 'barbers', 'services', 'schedule', 'transactions'])
 const CUSTOMER_PAGES = new Set([
   'dashboard',
   'book',
@@ -190,7 +191,8 @@ function App() {
       page === 'customers' ||
       page === 'barbers' ||
       page === 'services' ||
-      page === 'schedule'
+      page === 'schedule' ||
+      page === 'transactions'
         ? page
         : 'dashboard'
     return (
@@ -205,6 +207,8 @@ function App() {
           <AdminServices session={session} onLogout={handleLogout} />
         ) : adminPage === 'schedule' ? (
           <AdminSchedule session={session} onLogout={handleLogout} />
+        ) : adminPage === 'transactions' ? (
+          <AdminTransaction session={session} onLogout={handleLogout} />
         ) : (
           <AdminPage session={session} onLogout={handleLogout} />
         )}

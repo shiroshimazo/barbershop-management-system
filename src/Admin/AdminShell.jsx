@@ -80,7 +80,7 @@ export function AdminSidebar({
               <a
                 className={`customer-nav-item${activeId === item.id ? ' is-active' : ''}`}
                 href={`#${
-                  ['appointments', 'customers', 'barbers', 'services', 'schedule'].includes(item.id)
+                  ['appointments', 'customers', 'barbers', 'services', 'schedule', 'transactions'].includes(item.id)
                     ? item.id
                     : 'dashboard'
                 }`}
